@@ -82,6 +82,10 @@ npx electron-builder
 
 This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
 
+## 🌍 Credits
+
+- [Music icons created by Freepik - Flaticon](https://www.flaticon.com/free-icons/music)
+
 ---
 
 Created with ❤️ by **Janus Klok Matthesen**.
