@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import type { QuizArtist } from '../services/gemini';
 import { calculatePoints, getNextState, getPrevState, type GameState } from '../utils/gameLogic';
 import './Dashboard.css';
+
+// @ts-ignore
+import { v4 as uuidv4 } from 'uuid';
 
 const getApi = () => {
     // @ts-ignore
@@ -10,6 +12,7 @@ const getApi = () => {
     return {
         broadcastState: () => { },
         startRemoteServer: async () => 'localhost',
+        updateRemoteGuid: async () => { },
         openSpotify: () => alert('Spotify Desktop trigger mocked for Web Layer'),
         openPresentationWindow: () => window.open('/#/presentation', '_blank', 'width=1280,height=720'),
         getQuizzes: async () => [],
@@ -17,12 +20,12 @@ const getApi = () => {
     };
 };
 
-const Dashboard: React.FC = () => {
-    const navigate = useNavigate();
+const Dashboard: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
     const [savedQuizzes, setSavedQuizzes] = useState<any[]>([]);
     const [answerPeeked, setAnswerPeeked] = useState(false);
     const [newTeamName, setNewTeamName] = useState('');
     const [showWagerModal, setShowWagerModal] = useState(false);
+    const [remoteGuid, setRemoteGuid] = useState(uuidv4());
 
     const [gameState, setGameState] = useState<GameState>({
         activeArtistIndex: 0,
@@ -34,12 +37,25 @@ const Dashboard: React.FC = () => {
         allInActive: false,
         winnerMode: false,
         teams: [],
-        wagersLocked: false
+        wagersLocked: false,
+        spotifyMobileMode: 'desktop'
     });
     const [remoteIp, setRemoteIp] = useState('');
 
     useEffect(() => {
         getApi().getQuizzes().then(setSavedQuizzes);
+        getApi().getConfig().then((cfg: any) => {
+            if (cfg?.spotifyMobileMode) {
+                setGameState(prev => {
+                    const newState = { ...prev, spotifyMobileMode: cfg.spotifyMobileMode };
+                    // If we are already hosting, sync the mode to the remote immediately
+                    if (newState.quizData.length > 0) {
+                        getApi().broadcastState(newState);
+                    }
+                    return newState;
+                });
+            }
+        });
 
         // Listen for external state updates (from mobile remote or other sources)
         getApi().onStateUpdate?.((newState: any) => {
@@ -48,18 +64,69 @@ const Dashboard: React.FC = () => {
         });
     }, []);
 
+    // GUID Rotation logic
+    useEffect(() => {
+        if (!remoteIp) return;
+        const interval = setInterval(() => {
+            const newGuid = uuidv4();
+            setRemoteGuid(newGuid);
+            getApi().updateRemoteGuid(newGuid);
+            // Re-broadcast so main process has fresh state for new connections under this GUID
+            if (gameState.quizData.length > 0) {
+                getApi().broadcastState(gameState);
+            }
+        }, 60000); // Update every minute
+        return () => clearInterval(interval);
+    }, [remoteIp, gameState]);
+
+    // Reload quizzes and config when the tab becomes active
+    useEffect(() => {
+        if (isActive) {
+            getApi().getQuizzes().then(setSavedQuizzes);
+            getApi().getConfig().then((cfg: any) => {
+                if (cfg?.spotifyMobileMode) {
+                    setGameState(prev => {
+                        const newState = { ...prev, spotifyMobileMode: cfg.spotifyMobileMode };
+                        // If we are already hosting, sync the mode to the remote immediately
+                        if (newState.quizData.length > 0) {
+                            getApi().broadcastState(newState);
+                        }
+                        return newState;
+                    });
+                }
+            });
+        }
+    }, [isActive]);
+
     const broadcast = (newState: GameState) => {
         setGameState(newState);
         getApi().broadcastState(newState);
     };
 
-    const hostQuiz = (quizData: QuizArtist[]) => {
-        broadcast({ ...gameState, quizData, activeArtistIndex: 0, activeTier: 0, showAnswer: false, showBoard: false, showLeaderboard: true, allInActive: false, winnerMode: false, wagersLocked: false });
+    const hostQuiz = async (quizData: QuizArtist[]) => {
+        const cfg = await getApi().getConfig();
+        broadcast({ 
+            ...gameState, 
+            quizData, 
+            activeArtistIndex: 0, 
+            activeTier: 0, 
+            showAnswer: false, 
+            showBoard: false, 
+            showLeaderboard: true, 
+            allInActive: false, 
+            winnerMode: false, 
+            wagersLocked: false,
+            spotifyMobileMode: cfg?.spotifyMobileMode || 'desktop'
+        });
     };
 
     const handleStartRemote = async () => {
-        const ip = await getApi().startRemoteServer();
+        const ip = await getApi().startRemoteServer(remoteGuid);
         setRemoteIp(ip);
+        // Force a broadcast so the main process knows the current state for any immediate connections
+        if (gameState.quizData.length > 0) {
+            getApi().broadcastState(gameState);
+        }
     };
 
     const addTeam = () => {
@@ -98,16 +165,31 @@ const Dashboard: React.FC = () => {
 
     const handleNext = () => {
         setAnswerPeeked(false);
-        broadcast(getNextState(gameState));
+        const next = getNextState(gameState);
+        // If the current state is the last question and next is winnerMode, 
+        // we allow getNextState to handle it, but we can add a confirmation if needed.
+        broadcast(next);
     };
 
     const handlePrev = () => {
         setAnswerPeeked(false);
+        // If we are in winner mode, go back to the last question
+        if (gameState.winnerMode) {
+            broadcast({ ...gameState, winnerMode: false });
+            return;
+        }
         broadcast(getPrevState(gameState));
+    };
+
+    const handleStopHosting = () => {
+        if (window.confirm('Are you sure you want to stop hosting? Current progress will be lost.')) {
+            broadcast({ ...gameState, quizData: [] });
+        }
     };
 
     const currentPoints = gameState.activeTier === 0 ? 10 : (gameState.quizData[gameState.activeArtistIndex]?.lore_ladder?.[gameState.activeTier - 1]?.points || 10);
     const isFinalQuestion = gameState.activeArtistIndex === gameState.quizData.length - 1 && gameState.activeTier === 5;
+    const isLastStepBeforeFinish = isFinalQuestion && gameState.showAnswer;
 
     return (
         <div className="dashboard-root">
@@ -115,6 +197,7 @@ const Dashboard: React.FC = () => {
                 <div className="dashboard-header">
                     <h1>🎮 Quizmaster Dashboard</h1>
                     <div className="dashboard-header-actions">
+                        {gameState.quizData.length > 0 && <button className="btn-md btn-danger" style={{ marginRight: '1rem' }} onClick={handleStopHosting}>Stop Hosting</button>}
                         <button className="btn-md btn-accent" onClick={() => getApi().openPresentationWindow()}>Open Presentation Screen</button>
                     </div>
                 </div>
@@ -169,10 +252,10 @@ const Dashboard: React.FC = () => {
                             <div className="control-panel">
                                 {remoteIp ? (
                                     <div className="remote-panel">
-                                        <img src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=http://${remoteIp}:3001`} alt="QR Code" />
+                                        <img src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(`http://${remoteIp}:3001?auth=${remoteGuid}`)}`} alt="QR Code" />
                                         <div className="remote-info">
                                             <p className="status">✅ Remote Server Running!</p>
-                                            <p className="url">Scan the QR code with your phone:<br /><strong style={{ color: '#fff', fontSize: '1.2rem' }}>http://{remoteIp}:3001</strong></p>
+                                            <p className="url" style={{ fontSize: '0.8rem', opacity: 0.7 }}>Key refreshes every minute for security.</p>
                                         </div>
                                     </div>
                                 ) : (
@@ -184,12 +267,18 @@ const Dashboard: React.FC = () => {
                             <div className="control-panel">
                                 <div className="flow-buttons">
                                     <button className="btn-md btn-nav" onClick={handlePrev} disabled={gameState.activeArtistIndex === 0 && gameState.activeTier === 0}>⬅ Previous</button>
-                                    <button className="btn-md btn-primary" onClick={handleNext} disabled={gameState.winnerMode}>Next ➡</button>
+                                    <button className="btn-md btn-primary" onClick={handleNext} style={{ background: isLastStepBeforeFinish ? '#1db954' : '' }}>
+                                        {isLastStepBeforeFinish ? '🏁 Finish Quiz' : 'Next ➡'}
+                                    </button>
                                 </div>
 
                                 <div className="action-buttons">
                                     <div className="action-row">
-                                        <button className="btn-md btn-reveal" onClick={() => broadcast({ ...gameState, showAnswer: true })}>
+                                        <button 
+                                            className="btn-md btn-reveal" 
+                                            onClick={() => broadcast({ ...gameState, showAnswer: true })}
+                                            disabled={gameState.showAnswer}
+                                        >
                                             👁 Reveal Answer
                                         </button>
                                         <button className="btn-md btn-board" onClick={toggleBoard}>
@@ -222,8 +311,10 @@ const Dashboard: React.FC = () => {
                                                     {isFinalQuestion && t.wager !== undefined && <span className="wager-label">(Wagered: {t.wager})</span>}
                                                 </div>
                                                 <div className="point-buttons">
+                                                    <button className="btn-sm" style={{ background: '#dc3545' }} onClick={() => addPointsToTeam(i, -currentPoints)}>-{currentPoints}</button>
+                                                    <button className="btn-sm" style={{ background: '#ff4444' }} onClick={() => addPointsToTeam(i, -5)}>-5</button>
                                                     <button className="btn-sm" style={{ background: '#28a745' }} onClick={() => addPointsToTeam(i, 5)}>+5</button>
-                                                    <button className="btn-sm" style={{ background: '#17a2b8' }} onClick={() => addPointsToTeam(i, currentPoints)}>+{currentPoints}</button>
+                                                    <button className="btn-sm" style={{ background: '#1db954' }} onClick={() => addPointsToTeam(i, currentPoints)}>+{currentPoints}</button>
                                                     {isFinalQuestion && t.wager !== undefined && (
                                                         <>
                                                             <button className="btn-sm" style={{ background: '#1db954' }} onClick={() => addPointsToTeam(i, t.wager || 0, true)}>+Wager</button>
@@ -250,21 +341,42 @@ const Dashboard: React.FC = () => {
                                         {gameState.activeTier === 0 ? '🔓 UNLOCK PHASE' : `Tier ${gameState.activeTier}`}
                                     </span>
                                 </div>
-                                <h4 className="artist-label">{gameState.quizData[gameState.activeArtistIndex].artist}</h4>
+                                <h4 className="artist-label">{gameState.quizData[gameState.activeArtistIndex]?.artist}</h4>
 
-                                {(() => {
+                                {gameState.winnerMode ? (
+                                    <div className="prompt-card winner">
+                                        <h2 style={{ color: '#FFD700', textAlign: 'center' }}>🏆 QUIZ COMPLETE!</h2>
+                                        <p style={{ textAlign: 'center' }}>Final scores are shown on the presentation screen.</p>
+                                        <button className="btn-lg" onClick={() => broadcast({ ...gameState, quizData: [] })}>Exit to Menu</button>
+                                    </div>
+                                ) : (() => {
                                     const artist = gameState.quizData[gameState.activeArtistIndex];
+                                    if (!artist) return null;
+                                    
                                     if (gameState.activeTier === 0) {
                                         return (
                                             <>
                                                 <div className="prompt-card identification">
                                                     <p className="prompt-label">Phase 1: Identification</p>
                                                     <p className="prompt-text">Play the song and have teams identify the Artist + Song.</p>
-                                                    <p style={{ marginTop: '1rem' }}><strong>Artist:</strong> {artist.artist}</p>
-                                                    <p><strong>Unlock Song:</strong> {artist.unlock_song}</p>
                                                 </div>
-                                                <button className="btn-lg btn-success" onClick={() => getApi().openSpotify(artist.unlock_song_uri || '')}>
-                                                    🎵 Play Unlock Song (Spotify)
+
+                                                <div className="prompt-card answer" onClick={() => setAnswerPeeked(!answerPeeked)}>
+                                                    <p className="prompt-label">{answerPeeked ? 'Identity:' : '🔒 Click to peek'}</p>
+                                                    {answerPeeked && (
+                                                        <p className="prompt-text answer-text">
+                                                            {artist.artist} - {artist.unlock_song}
+                                                        </p>
+                                                    )}
+                                                </div>
+
+                                                <button 
+                                                    className="btn-lg btn-success" 
+                                                    onClick={() => getApi().openSpotify(artist.unlock_song_uri || '')}
+                                                    disabled={!artist.unlock_song_uri}
+                                                    style={{ opacity: !artist.unlock_song_uri ? 0.5 : 1 }}
+                                                >
+                                                    {artist.unlock_song_uri ? '🎵 Play Unlock Song (Spotify)' : '❌ No Spotify Link Found'}
                                                 </button>
                                             </>
                                         );
@@ -284,8 +396,13 @@ const Dashboard: React.FC = () => {
                                                 <p className="prompt-meta">Base Value: {currentQ.points} pts</p>
                                             </div>
 
-                                            <button className="btn-lg btn-success" onClick={() => getApi().openSpotify(currentQ.audio_hint_uri || '')}>
-                                                🎵 Play Audio Hint (Spotify)
+                                            <button 
+                                                className="btn-lg btn-success" 
+                                                onClick={() => getApi().openSpotify(currentQ.audio_hint_uri || '')}
+                                                disabled={!currentQ.audio_hint_uri}
+                                                style={{ opacity: !currentQ.audio_hint_uri ? 0.5 : 1 }}
+                                            >
+                                                {currentQ.audio_hint_uri ? '🎵 Play Audio Hint (Spotify)' : '❌ No Spotify Link Found'}
                                             </button>
                                         </>
                                     );

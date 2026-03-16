@@ -18,6 +18,7 @@ export interface GameState {
     winnerMode: boolean;
     teams: Team[];
     wagersLocked: boolean;
+    spotifyMobileMode?: 'desktop' | 'mobile';
 }
 
 export const calculatePoints = (isAllInActive: boolean, addedPoints: number): number => {

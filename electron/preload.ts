@@ -8,9 +8,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onStateUpdate: (callback: (state: any) => void) => {
         ipcRenderer.on('state-updated', (_event, state) => callback(state));
     },
-    startRemoteServer: () => ipcRenderer.invoke('start-remote-server'),
+    startRemoteServer: (initialGuid: string) => ipcRenderer.invoke('start-remote-server', initialGuid),
+    updateRemoteGuid: (guid: string) => ipcRenderer.invoke('update-remote-guid', guid),
     openPresentationWindow: () => ipcRenderer.invoke('open-presentation-window'),
     saveQuiz: (quiz: any) => ipcRenderer.invoke('save-quiz', quiz),
     getQuizzes: () => ipcRenderer.invoke('get-quizzes'),
     deleteQuiz: (quizId: any) => ipcRenderer.invoke('delete-quiz', quizId),
+    fetchMbid: (artistName: string) => ipcRenderer.invoke('fetch-mbid', artistName),
+    fetchFanart: (mbid: string, personalApiKey: string, quizId: number) => ipcRenderer.invoke('fetch-fanart', mbid, personalApiKey, quizId),
 });

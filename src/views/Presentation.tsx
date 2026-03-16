@@ -31,18 +31,38 @@ const Presentation: React.FC = () => {
     const [gameState, setGameState] = useState<any>(null);
     const [init, setInit] = useState(false);
     const [flash, setFlash] = useState(false);
+    const answerRef = React.useRef<HTMLDivElement>(null);
 
     useEffect(() => {
+        let isMounted = true;
         initParticlesEngine(async (engine) => {
             await loadFull(engine);
         }).then(() => {
-            setInit(true);
+            if (isMounted) setInit(true);
         });
 
         getApi().onStateUpdate((newState: any) => {
-            setGameState(newState);
+            if (isMounted) setGameState(newState);
         });
+
+        return () => { isMounted = false; };
     }, []);
+
+    // Scroll to top on step change
+    useEffect(() => {
+        if (gameState) {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+    }, [gameState?.activeArtistIndex, gameState?.activeTier]);
+
+    // Scroll to answer when revealed
+    useEffect(() => {
+        if (gameState?.showAnswer && answerRef.current) {
+            setTimeout(() => {
+                answerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }, 100);
+        }
+    }, [gameState?.showAnswer]);
 
     // Effect for random lightning flashes
     useEffect(() => {
@@ -50,15 +70,20 @@ const Presentation: React.FC = () => {
         const artist = gameState.quizData[gameState.activeArtistIndex];
         if (artist?.visual_theme?.animation_type !== 'lightning') return;
 
+        let isMounted = true;
+        let timer: NodeJS.Timeout;
+
         const triggerFlash = () => {
+            if (!isMounted) return;
             setFlash(true);
-            setTimeout(() => setFlash(false), 100 + Math.random() * 200);
+            setTimeout(() => { if (isMounted) setFlash(false); }, 100 + Math.random() * 200);
             
             // Randomly trigger a double flash
             if (Math.random() > 0.7) {
                 setTimeout(() => {
+                    if (!isMounted) return;
                     setFlash(true);
-                    setTimeout(() => setFlash(false), 50 + Math.random() * 100);
+                    setTimeout(() => { if (isMounted) setFlash(false); }, 50 + Math.random() * 100);
                 }, 300);
             }
             
@@ -66,14 +91,15 @@ const Presentation: React.FC = () => {
         };
 
         const scheduleNext = () => {
+            if (!isMounted) return;
             const delay = 3000 + Math.random() * 8000;
-            const timer = setTimeout(triggerFlash, delay);
-            return () => clearTimeout(timer);
+            timer = setTimeout(triggerFlash, delay);
         };
 
-        const cleanup = scheduleNext();
+        scheduleNext();
         return () => {
-            if (typeof cleanup === 'function') cleanup();
+            isMounted = false;
+            clearTimeout(timer);
         };
     }, [gameState]);
 
@@ -133,27 +159,27 @@ const Presentation: React.FC = () => {
         fullScreen: { enable: false },
         fpsLimit: 60,
         particles: {
-            number: { value: 100, density: { enable: true, area: 800 } },
+            number: { value: 30, density: { enable: true, area: 800 } },
             color: { value: "#ffffff" },
             shape: { type: "circle" },
             opacity: {
-                value: { min: 0.1, max: 0.5 },
-                animation: { enable: true, speed: 1, sync: false }
+                value: { min: 0.1, max: 0.3 },
+                animation: { enable: true, speed: 0.5, sync: false }
             },
             size: {
-                value: { min: 1, max: 3 },
-                animation: { enable: true, speed: 2, sync: false }
+                value: { min: 1, max: 2 },
+                animation: { enable: true, speed: 1, sync: false }
             },
             move: {
                 enable: true,
-                speed: 0.2,
+                speed: 0.1,
                 direction: "none",
                 random: true,
                 straight: false,
                 outModes: { default: "out" }
             }
         },
-        detectRetina: true
+        detectRetina: false
     };
 
     const getThematicParticles = (theme: any) => {
@@ -166,11 +192,12 @@ const Presentation: React.FC = () => {
             fpsLimit: 60,
             particles: {
                 color: { value: color },
-                move: { enable: true, speed: 2 },
-                number: { value: 50, density: { enable: true } },
-                opacity: { value: 0.5 },
+                move: { enable: true, speed: 1.5 },
+                number: { value: 30, density: { enable: true } },
+                opacity: { value: 0.4 },
                 size: { value: { min: 1, max: 3 } }
-            }
+            },
+            detectRetina: false
         };
 
         switch (type) {
@@ -179,18 +206,18 @@ const Presentation: React.FC = () => {
                     ...baseConfig,
                     particles: {
                         ...baseConfig.particles,
-                        number: { value: 40 },
+                        number: { value: 25 },
                         color: { value: [color, secondary, '#ffffff'] },
                         links: {
                             enable: true,
                             color: color,
-                            distance: 200,
-                            opacity: 0.5,
-                            width: 2,
-                            triangles: { enable: true, opacity: 0.08 }
+                            distance: 150,
+                            opacity: 0.4,
+                            width: 1,
+                            triangles: { enable: true, opacity: 0.05 }
                         },
-                        move: { ...baseConfig.particles.move, speed: 6, outModes: "bounce" },
-                        size: { value: { min: 1, max: 4 } }
+                        move: { ...baseConfig.particles.move, speed: 4, outModes: "bounce" },
+                        size: { value: { min: 1, max: 3 } }
                     }
                 };
             case 'bubbles':
@@ -200,11 +227,11 @@ const Presentation: React.FC = () => {
                         ...baseConfig.particles,
                         color: { value: [color, secondary] },
                         shape: { type: "circle" },
-                        number: { value: 35 },
-                        size: { value: { min: 8, max: 40 } },
-                        move: { ...baseConfig.particles.move, speed: 1.2, direction: "top", outModes: "out" },
-                        opacity: { value: { min: 0.05, max: 0.25 }, animation: { enable: true, speed: 0.8, minimumValue: 0.05 } },
-                        stroke: { width: 1, color: { value: color }, opacity: 0.3 }
+                        number: { value: 20 },
+                        size: { value: { min: 8, max: 30 } },
+                        move: { ...baseConfig.particles.move, speed: 1, direction: "top", outModes: "out" },
+                        opacity: { value: { min: 0.05, max: 0.2 }, animation: { enable: true, speed: 0.5, minimumValue: 0.05 } },
+                        stroke: { width: 1, color: { value: color }, opacity: 0.2 }
                     }
                 };
             case 'neon_grid':
@@ -213,12 +240,12 @@ const Presentation: React.FC = () => {
                     particles: {
                         ...baseConfig.particles,
                         shape: { type: "square" },
-                        number: { value: 50 },
+                        number: { value: 30 },
                         color: { value: [color, secondary] },
-                        links: { enable: true, color: color, distance: 250, opacity: 0.4, width: 1 },
-                        move: { ...baseConfig.particles.move, speed: 0.8, outModes: "out" },
-                        opacity: { value: 0.6 },
-                        size: { value: { min: 2, max: 5 } }
+                        links: { enable: true, color: color, distance: 200, opacity: 0.3, width: 1 },
+                        move: { ...baseConfig.particles.move, speed: 0.6, outModes: "out" },
+                        opacity: { value: 0.5 },
+                        size: { value: { min: 2, max: 4 } }
                     }
                 };
             case 'spotlight':
@@ -226,11 +253,11 @@ const Presentation: React.FC = () => {
                     ...baseConfig,
                     particles: {
                         ...baseConfig.particles,
-                        number: { value: 8 },
+                        number: { value: 5 },
                         color: { value: [color, secondary, '#ffffff'] },
-                        size: { value: { min: 80, max: 250 } },
-                        opacity: { value: { min: 0.03, max: 0.12 }, animation: { enable: true, speed: 0.5, minimumValue: 0.03 } },
-                        move: { ...baseConfig.particles.move, speed: 0.3, direction: "random", outModes: "bounce" },
+                        size: { value: { min: 80, max: 200 } },
+                        opacity: { value: { min: 0.02, max: 0.1 }, animation: { enable: true, speed: 0.3, minimumValue: 0.02 } },
+                        move: { ...baseConfig.particles.move, speed: 0.2, direction: "random", outModes: "bounce" },
                         shape: { type: "circle" }
                     }
                 };
@@ -240,18 +267,18 @@ const Presentation: React.FC = () => {
                     particles: {
                         ...baseConfig.particles,
                         shape: { type: "square" },
-                        number: { value: 80 },
+                        number: { value: 50 },
                         color: { value: [color, secondary] },
-                        size: { value: { min: 2, max: 8 } },
+                        size: { value: { min: 2, max: 6 } },
                         move: { 
                             enable: true, 
-                            speed: { min: 2, max: 15 }, 
+                            speed: { min: 1, max: 10 }, 
                             direction: "top", 
                             outModes: "out",
                             random: false,
                             straight: true
                         },
-                        opacity: { value: { min: 0.3, max: 0.8 } }
+                        opacity: { value: { min: 0.2, max: 0.6 } }
                     }
                 };
             case 'floating_notes':
@@ -259,7 +286,7 @@ const Presentation: React.FC = () => {
                     ...baseConfig,
                     particles: {
                         ...baseConfig.particles,
-                        number: { value: 25 },
+                        number: { value: 15 },
                         color: { value: [color, secondary, '#ffffff'] },
                         shape: { 
                             type: "char",
@@ -267,10 +294,10 @@ const Presentation: React.FC = () => {
                                 char: { value: ["♪", "♫", "♩", "♬", "♭", "♮"], font: "Verdana", weight: "400" }
                             }
                         },
-                        size: { value: { min: 12, max: 36 } },
-                        move: { ...baseConfig.particles.move, speed: 1.5, direction: "top-right", outModes: "out" },
-                        rotate: { value: { min: 0, max: 360 }, animation: { enable: true, speed: 5 } },
-                        opacity: { value: { min: 0.2, max: 0.7 } }
+                        size: { value: { min: 12, max: 28 } },
+                        move: { ...baseConfig.particles.move, speed: 1.2, direction: "top-right", outModes: "out" },
+                        rotate: { value: { min: 0, max: 360 }, animation: { enable: true, speed: 3 } },
+                        opacity: { value: { min: 0.2, max: 0.5 } }
                     }
                 };
             case 'grunge_static':
@@ -278,12 +305,12 @@ const Presentation: React.FC = () => {
                     ...baseConfig,
                     particles: {
                         ...baseConfig.particles,
-                        number: { value: 250 },
+                        number: { value: 150 },
                         color: { value: [color, '#ffffff', '#888888'] },
                         shape: { type: "square" },
-                        size: { value: { min: 1, max: 3 } },
-                        move: { ...baseConfig.particles.move, speed: 25, direction: "none", random: true },
-                        opacity: { value: { min: 0.05, max: 0.6 }, animation: { enable: true, speed: 15 } }
+                        size: { value: { min: 1, max: 2 } },
+                        move: { ...baseConfig.particles.move, speed: 15, direction: "none", random: true },
+                        opacity: { value: { min: 0.05, max: 0.4 }, animation: { enable: true, speed: 10 } }
                     }
                 };
             default:
@@ -291,7 +318,6 @@ const Presentation: React.FC = () => {
         }
     };
 
-    // Determine background style class
     const bgStyle = theme.background_style || 'dark';
 
     return (
@@ -302,8 +328,20 @@ const Presentation: React.FC = () => {
             '--artist-font': artistFont,
         } as React.CSSProperties}>
             
-            {/* Background Layers */}
-            <div className="bg-gradient-layer"></div>
+            {/* Fanart Background Layer */}
+            {artist.fanart_backgrounds && artist.fanart_backgrounds.length > 0 && gameState.activeTier > 0 ? (
+                <>
+                    <div 
+                        className="bg-fanart-layer"
+                        style={{ 
+                            backgroundImage: `url(${artist.fanart_backgrounds[gameState.activeTier % artist.fanart_backgrounds.length]})`
+                        }}
+                    />
+                    <div className="bg-gradient-layer fanart-blend"></div>
+                </>
+            ) : (
+                <div className="bg-gradient-layer"></div>
+            )}
             <div className="bg-vignette"></div>
             <div className="bg-noise"></div>
             <div className="bg-pattern"></div>
@@ -357,9 +395,17 @@ const Presentation: React.FC = () => {
                 <header className="presentation-header">
                     <div className="artist-info">
                         <div className="round-badge">ROUND {gameState.activeArtistIndex + 1}</div>
-                        <h1 className="artist-name">
-                            {isUnlockPhase ? '???' : artist.artist}
-                        </h1>
+                        
+                        {isUnlockPhase ? (
+                            <h1 className="artist-name">???</h1>
+                        ) : artist.fanart_logo ? (
+                            <div className="artist-logo-container">
+                                <img src={artist.fanart_logo} alt={artist.artist} className="active-artist-logo" />
+                            </div>
+                        ) : (
+                            <h1 className="artist-name">{artist.artist}</h1>
+                        )}
+                        
                         <p className="genre-tag">{artist.genre}</p>
                     </div>
 
@@ -397,7 +443,7 @@ const Presentation: React.FC = () => {
                             <div className="lore-content">
                                 <p className="spoken-hint">{question.spoken_hint}</p>
                                 {gameState.showAnswer && (
-                                    <div className="answer-reveal">
+                                    <div className="answer-reveal" ref={answerRef}>
                                         <div className="reveal-line"></div>
                                         <h3 className="answer-text">{question.answer}</h3>
                                     </div>
@@ -491,6 +537,25 @@ const Presentation: React.FC = () => {
                     background: radial-gradient(circle at 20% 30%, var(--primary-color)55 0%, transparent 45%),
                                 radial-gradient(circle at 80% 70%, var(--secondary-color)55 0%, transparent 45%);
                     z-index: 0;
+                }
+
+                .bg-fanart-layer {
+                    position: absolute;
+                    top: 0; left: 0; width: 100%; height: 100%;
+                    background-size: cover;
+                    background-position: center;
+                    background-repeat: no-repeat;
+                    z-index: 0;
+                    opacity: 0.4;
+                    mix-blend-mode: luminosity;
+                    filter: contrast(1.2) brightness(0.8);
+                }
+
+                .bg-gradient-layer.fanart-blend {
+                    background: radial-gradient(circle at 20% 30%, var(--primary-color)88 0%, transparent 60%),
+                                radial-gradient(circle at 80% 70%, var(--secondary-color)88 0%, transparent 60%);
+                    mix-blend-mode: overlay;
+                    opacity: 0.9;
                 }
 
                 .bg-vignette {
@@ -603,6 +668,27 @@ const Presentation: React.FC = () => {
                                  0 2px 4px rgba(0,0,0,0.8);
                     letter-spacing: -2px;
                     -webkit-text-stroke: 1px rgba(255,255,255,0.1);
+                }
+
+                .artist-logo-container {
+                    display: flex;
+                    align-items: center;
+                    justify-content: flex-start;
+                    height: 120px;
+                    margin: 0.5rem 0;
+                }
+
+                .active-artist-logo {
+                    max-height: 100%;
+                    max-width: 600px;
+                    object-fit: contain;
+                    filter: drop-shadow(0 0 20px var(--primary-glow)) drop-shadow(0 5px 15px rgba(0,0,0,0.8));
+                    animation: floatLogo 6s ease-in-out infinite;
+                }
+
+                @keyframes floatLogo {
+                    0%, 100% { transform: translateY(0); }
+                    50% { transform: translateY(-10px); }
                 }
 
                 .round-badge {

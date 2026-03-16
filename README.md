@@ -85,6 +85,7 @@ This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) 
 ## 🌍 Credits
 
 - [Music icons created by Freepik - Flaticon](https://www.flaticon.com/free-icons/music)
+- Artwork and metadata provided by [Fanart.tv](https://fanart.tv). Users can optionally get their own personal API key for faster image access.
 
 ---
 

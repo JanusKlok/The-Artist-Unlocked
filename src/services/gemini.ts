@@ -12,6 +12,8 @@ export interface QuizArtist {
     unlock_song_uri?: string;
     unlock_song_name?: string;
     unlock_song_image?: string;
+    fanart_logo?: string;
+    fanart_backgrounds?: string[];
     lore_ladder: Array<{
         tier: number;
         points: number;
@@ -40,9 +42,11 @@ export const listModels = async (geminiKey: string): Promise<string[]> => {
     }
 };
 
-export const generateArtistTrivia = async (geminiKey: string, artistName: string, difficultyModifier: string, model: string = 'gemini-1.5-flash'): Promise<QuizArtist> => {
-    const prompt = `You are an expert music historian and trivia master. Your task is to generate a trivia dataset for the artist: ${artistName}. 
-You must return the response strictly as a valid JSON object matching the exact structure below. Do not include markdown formatting, code blocks, or conversational text outside of the JSON object.
+export const generateArtistTrivia = async (geminiKey: string, artistNames: string[], difficultyModifier: string, model: string = 'gemini-1.5-flash'): Promise<QuizArtist[]> => {
+    const count = artistNames.length;
+    const artistsList = artistNames.join(', ');
+    const prompt = `You are an expert music historian and trivia master. Your task is to generate a trivia dataset for the following ${count} artists: ${artistsList}. 
+You must return the response strictly as a valid JSON array of ${count} objects, each matching the exact structure below. Do not include markdown formatting, code blocks, or conversational text outside of the JSON array.
 
 Difficulty Constraints:
 ${difficultyModifier}
@@ -57,9 +61,12 @@ The trivia must follow these rules:
    - "font_style": one of [heavy, elegant, grunge, retro]. "heavy" for metal/rock, "elegant" for jazz/soul/classical, "grunge" for punk/alternative/grunge, "retro" for synth/disco/80s.
    - "background_style": one of [dark, gradient, smoky, grid-overlay]. "dark" for metal/heavy, "gradient" for pop/soul, "smoky" for jazz/blues/psychedelic, "grid-overlay" for electronic/synth/techno.
 
-JSON Structure:
+STRICT UNIQUENESS RULE:
+Every single "unlock_song" and "audio_hint_song" across all ${count} artists MUST be completely unique. You MUST NOT select the same song twice anywhere in the entire output of ${count * 6} total songs (${count} unlock songs + ${count * 5} lore ladder songs).
+
+JSON Structure (Return an ARRAY of ${count} of these):
 {
-  "artist": "${artistName}",
+  "artist": "Artist Name",
   "genre": "Genre Name",
   "visual_theme": {
     "primary_color": "#HEXCODE",
@@ -121,5 +128,5 @@ JSON Structure:
     // Sanitize: Remove markdown code blocks if present
     rawText = rawText.replace(/```json/g, '').replace(/```/g, '').trim();
 
-    return JSON.parse(rawText) as QuizArtist;
+    return JSON.parse(rawText) as QuizArtist[];
 };

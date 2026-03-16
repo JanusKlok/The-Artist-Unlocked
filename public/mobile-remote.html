@@ -1,332 +1,505 @@
 <!DOCTYPE html>
-<html lang="en">
-
+<html>
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <link rel="icon" type="image/png" href="/music.png" />
-    <title>The Artist Unlocked — Quizmaster Remote</title>
-    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Artist Unlocked Remote</title>
+    <!-- Use CDN for better reliability, with local fallback -->
+    <script src="https://cdn.socket.io/4.8.3/socket.io.min.js" crossorigin="anonymous"></script>
+    <script>
+        if (typeof io === 'undefined') {
+            document.write('<script src="/socket.io/socket.io.js"><\/script>');
+        }
+    </script>
     <style>
-        * {
-            box-sizing: border-box;
+        :root {
+            --primary: #00E5FF;
+            --secondary: #f39c12;
+            --danger: #ff4444;
+            --bg: #121212;
+            --card-bg: #1e1e1e;
+            --text: #ffffff;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
             margin: 0;
             padding: 0;
-        }
-
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: linear-gradient(135deg, #1a1a2e, #16213e);
-            color: #fff;
             min-height: 100vh;
-            padding: 1rem;
-            padding-bottom: 5rem;
+            display: flex;
+            flex-direction: column;
         }
-
-        h1 {
-            font-size: 1.2rem;
+        .header {
+            background-color: #000;
+            padding: 1rem;
             text-align: center;
-            color: #FF4081;
+            border-bottom: 1px solid #333;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .header h1 {
+            font-size: 1.1rem;
+            margin: 0;
+            color: var(--primary);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .content {
+            flex: 1;
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            padding-bottom: 240px; /* Space for larger fixed controls */
+        }
+        .status-bar {
+            background: #222;
+            padding: 0.5rem 1rem;
+            font-size: 0.8rem;
+            display: flex;
+            justify-content: space-between;
+            border-radius: 8px;
+        }
+        .card {
+            background: var(--card-bg);
+            border-radius: 12px;
+            padding: 1rem;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+            border-left: 4px solid var(--primary);
+        }
+        .card.answer-card {
+            border-left-color: var(--secondary);
+            min-height: 80px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .card.answer-card:active {
+            background: #252525;
+        }
+        .label {
+            font-size: 0.7rem;
+            color: #888;
+            text-transform: uppercase;
             margin-bottom: 0.5rem;
+            display: block;
         }
-
-        .status {
+        .value {
+            font-size: 1.1rem;
+            font-weight: bold;
+        }
+        .answer-text {
+            font-size: 1.3rem;
+            color: var(--secondary);
             text-align: center;
-            color: #aaa;
-            font-size: 0.7rem;
-            margin-bottom: 1rem;
         }
-
-        .status.connected {
-            color: #1db954;
+        .hidden-answer {
+            text-align: center;
+            opacity: 0.6;
+            font-style: italic;
+            font-size: 0.9rem;
         }
-
-        .info-card {
-            background: rgba(255, 255, 255, 0.08);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 12px;
-            padding: 1rem;
-            margin-bottom: 1rem;
-        }
-
-        .info-card .artist {
-            color: #00E5FF;
-            font-size: 1.2rem;
-            font-weight: bold;
-        }
-
-        .info-card .tier {
-            display: inline-block;
-            background: #FF4081;
-            padding: 0.2rem 0.6rem;
-            border-radius: 12px;
-            font-size: 0.7rem;
-            font-weight: bold;
-            margin-top: 0.3rem;
-        }
-
-        .info-card .hint {
-            margin-top: 0.8rem;
-            font-size: 0.95rem;
-            line-height: 1.4;
-            color: #ddd;
-        }
-
-        .info-card .answer {
-            margin-top: 0.8rem;
-            padding: 0.8rem;
-            background: rgba(0, 0, 0, 0.4);
-            border-left: 3px solid #1db954;
-            border-radius: 6px;
-            font-weight: bold;
-            color: #1db954;
-        }
-
-        .answer.hidden {
-            color: rgba(255, 255, 255, 0.1);
-        }
-
         .controls {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            padding: 1rem;
+            background: #000;
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            border-top: 1px solid #333;
+            box-shadow: 0 -5px 20px rgba(0,0,0,0.5);
+            z-index: 100;
+        }
+        .control-row {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 0.5rem;
-            margin-bottom: 1.5rem;
+            gap: 0.75rem;
         }
-
         button {
-            padding: 0.8rem;
+            background: #333;
+            color: white;
             border: none;
+            padding: 0.75rem;
             border-radius: 8px;
             font-size: 0.9rem;
             font-weight: bold;
-            color: #fff;
             cursor: pointer;
-            transition: transform 0.1s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.4rem;
         }
-
         button:active {
-            transform: scale(0.95);
+            background: #444;
+            transform: scale(0.98);
         }
+        button.primary { background: var(--primary); color: #000; }
+        button.secondary { background: var(--secondary); color: #000; }
+        button.danger { background: var(--danger); color: #fff; }
+        button.ghost { background: transparent; border: 1px solid #444; color: #aaa; padding: 0.4rem 0.8rem; font-size: 0.7rem; }
+        button:disabled { opacity: 0.2; }
 
-        .btn-prev { background: #444; }
-        .btn-next { background: #FF4081; }
-        .btn-reveal { background: #007bff; grid-column: 1 / -1; }
-        .btn-spotify { background: #1db954; grid-column: 1 / -1; }
-
-        .team-card {
-            background: rgba(0, 0, 0, 0.3);
-            border-radius: 10px;
-            padding: 0.8rem;
-            margin-bottom: 0.8rem;
-            border: 1px solid rgba(255, 255, 255, 0.05);
+        .team-row {
+            display: flex;
+            flex-direction: column;
+            padding: 0.75rem;
+            background: #2a2a2a;
+            border-radius: 8px;
+            margin-bottom: 0.75rem;
+            gap: 0.75rem;
         }
-
-        .team-card.all-in-active {
-            border: 2px solid #ffc107;
-        }
-
         .team-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 0.5rem;
         }
-
-        .team-score {
-            font-size: 1.2rem;
-            color: #00E5FF;
-            font-weight: bold;
+        .team-pts { color: var(--primary); font-weight: bold; }
+        .score-actions {
+            display: flex;
+            gap: 0.5rem;
         }
-
-        .score-buttons {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 0.4rem;
-        }
-
-        .score-buttons button {
+        .score-actions button {
+            flex: 1;
             padding: 0.5rem;
-            font-size: 0.75rem;
+            font-size: 0.8rem;
+        }
+        .all-in-btn.active {
+            background: var(--danger);
+            color: white;
         }
 
-        .btn-plus { background: #28a745; }
-        .btn-minus { background: #dc3545; }
-        .btn-allin { background: #ffc107; color: #000; }
-        .btn-allin.used { background: #555; color: #aaa; }
-
-        .waiting { text-align: center; padding: 4rem 1rem; }
+        .auth-error-overlay {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: #000;
+            z-index: 1000;
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 2rem;
+        }
+        #debug-console {
+            position: fixed;
+            top: 50px; left: 0; right: 0;
+            background: rgba(0,0,0,0.9);
+            color: #0f0;
+            font-family: monospace;
+            font-size: 10px;
+            padding: 5px;
+            max-height: 150px;
+            overflow-y: auto;
+            display: none;
+            z-index: 2000;
+            border-bottom: 1px solid #0f0;
+        }
     </style>
 </head>
-
 <body>
-    <h1>The Artist Unlocked</h1>
-    <div class="status" id="connStatus">Connecting...</div>
-
-    <div id="waiting" class="waiting">
-        <h2>📡 Standing By</h2>
-        <p>Start a quiz on the desktop app...</p>
+    <div id="auth-error" class="auth-error-overlay">
+        <h1 style="color:#ff4444;">⚠️ Session Expired</h1>
+        <p>The security key has changed.</p>
+        <p>Please scan the <b>new</b> QR code on the Dashboard to reconnect.</p>
     </div>
 
-    <div id="gameUI" style="display:none;">
-        <div class="info-card">
-            <div class="artist" id="artistName">—</div>
-            <span class="tier" id="tierBadge">Tier 1</span>
-            <div class="hint" id="hintText">—</div>
-            <div class="answer hidden" id="answerBlock" onclick="this.classList.toggle('hidden')">—</div>
+    <div class="header">
+        <h1 onclick="toggleDebug()">Artist Unlocked Remote</h1>
+        <button id="btn-stop" class="ghost">Stop Hosting</button>
+    </div>
+
+    <div id="debug-console"></div>
+
+    <div class="content" id="main-content">
+        <div class="status-bar">
+            <span id="connection-status">Connecting...</span>
+            <span id="game-status">No Quiz Hosted</span>
         </div>
 
-        <div class="controls">
-            <button class="btn-prev" onclick="sendAction('prev')">⬅ Prev</button>
-            <button class="btn-next" onclick="sendAction('next')">Next ➡</button>
-            <button class="btn-reveal" onclick="sendAction('reveal')">👁 Reveal on Screen</button>
-            <button class="btn-board" id="btnBoard" onclick="sendAction('board')" style="background: #f39c12; color: #000;">📋 Show Board</button>
-            <button class="btn-leaderboard" id="btnLeaderboard" onclick="sendAction('leaderboard')" style="grid-column: 1 / -1;">👁 Show Leaderboard</button>
-            <button class="btn-spotify" onclick="sendAction('spotify')">🎵 Play Spotify</button>
-        </div>
+        <div id="quiz-info" style="display: none;">
+            <div class="card">
+                <span class="label" id="phase-label">Phase</span>
+                <div class="value" id="artist-name">Artist Name</div>
+            </div>
 
-        <h3 style="margin-bottom: 0.8rem; font-size: 1rem; color: #aaa; text-transform: uppercase;">Scoreboard</h3>
-        <div id="teamsContainer"></div>
+            <div class="card">
+                <span class="label">Question / Hint</span>
+                <div class="value" id="question-text" style="font-weight: normal; line-height: 1.4;">Waiting for question...</div>
+            </div>
+
+            <div class="card answer-card" id="answer-card">
+                <span class="label">Answer (Tap to Peek)</span>
+                <div id="answer-display">
+                    <div class="hidden-answer">🔒 Hidden on Presentation</div>
+                </div>
+            </div>
+
+            <div id="team-section">
+                <span class="label">Teams & Scoring</span>
+                <div id="team-list"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="controls">
+        <div class="control-row">
+            <button id="btn-prev">⬅ Prev</button>
+            <button id="btn-next" class="primary">Next ➡</button>
+        </div>
+        <div class="control-row">
+            <button id="btn-board">📋 Board</button>
+            <button id="btn-leaderboard">🏆 Scores</button>
+        </div>
+        <button id="btn-reveal" class="secondary">👁 Reveal Answer</button>
+        <button id="btn-spotify">🎵 Play Spotify</button>
     </div>
 
     <script>
-        const socket = io(window.location.protocol + '//' + window.location.host);
-        let state = null;
-
-        socket.on('connect', () => {
-            document.getElementById('connStatus').textContent = '✅ Connected';
-            document.getElementById('connStatus').className = 'status connected';
-            socket.emit('request-state');
-        });
-
-        socket.on('state-updated', (newState) => {
-            state = newState;
-            render();
-        });
-
-        function render() {
-            if (!state || !state.quizData || !state.quizData.length) {
-                document.getElementById('waiting').style.display = '';
-                document.getElementById('gameUI').style.display = 'none';
-                return;
-            }
-            document.getElementById('waiting').style.display = 'none';
-            document.getElementById('gameUI').style.display = '';
-
-            const artist = state.quizData[state.activeArtistIndex];
-            const isUnlock = state.activeTier === 0;
-            const question = isUnlock ? null : artist.lore_ladder[state.activeTier - 1];
-
-            document.getElementById('artistName').textContent = artist.artist;
-            document.getElementById('tierBadge').textContent = isUnlock ? '🔓 UNLOCK PHASE' : `Tier ${state.activeTier}`;
-            document.getElementById('hintText').textContent = isUnlock ? 'Play the song and have teams identify the Artist + Song.' : question.spoken_hint;
-            document.getElementById('answerBlock').textContent = isUnlock ? artist.unlock_song : question.answer;
-            document.getElementById('answerBlock').classList.add('hidden');
-
-            const btnBoard = document.getElementById('btnBoard');
-            if (state.showBoard) {
-                btnBoard.textContent = '❌ Hide Board';
-                btnBoard.style.background = '#444';
-                btnBoard.style.color = '#fff';
-            } else {
-                btnBoard.textContent = '📋 Show Board';
-                btnBoard.style.background = '#f39c12';
-                btnBoard.style.color = '#000';
-            }
-
-            const btnLeaderboard = document.getElementById('btnLeaderboard');
-            if (state.showLeaderboard) {
-                btnLeaderboard.textContent = '🙈 Hide Leaderboard';
-                btnLeaderboard.style.background = '#dc3545';
-            } else {
-                btnLeaderboard.textContent = '👁 Show Leaderboard';
-                btnLeaderboard.style.background = '#1db954';
-            }
-
-            renderTeams();
+        const debugConsole = document.getElementById('debug-console');
+        function log(msg) {
+            console.log(msg);
+            const line = document.createElement('div');
+            line.innerText = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            debugConsole.appendChild(line);
+            debugConsole.scrollTop = debugConsole.scrollHeight;
         }
 
-        function renderTeams() {
-            const container = document.getElementById('teamsContainer');
-            container.innerHTML = '';
-            
-            const currentPts = state.activeTier === 0 ? 10 : (state.quizData[state.activeArtistIndex].lore_ladder[state.activeTier - 1].points);
+        function toggleDebug() {
+            debugConsole.style.display = debugConsole.style.display === 'none' ? 'block' : 'none';
+        }
 
-            state.teams.forEach((team, idx) => {
-                const card = document.createElement('div');
-                card.className = 'team-card' + (state.allInActive && team.allInUsed ? ' all-in-active' : '');
+        const urlParams = new URLSearchParams(window.location.search);
+        const authGuid = urlParams.get('auth');
+        
+        const socket = io({
+            query: { auth: authGuid },
+            transports: ['polling', 'websocket']
+        });
+
+        let gameState = null;
+        let localPeek = false;
+
+        socket.on('connect', () => {
+            document.getElementById('connection-status').innerText = '✅ Connected';
+            document.getElementById('connection-status').style.color = '#1db954';
+            setTimeout(() => socket.emit('request-state'), 500);
+        });
+
+        socket.on('connect_error', (err) => {
+            if (err.message.includes('AUTH_FAILED')) {
+                document.getElementById('auth-error').style.display = 'flex';
+            }
+        });
+
+        socket.on('state-updated', (state) => {
+            log(`State Received! Mode: ${state?.spotifyMobileMode || 'desktop'}, Artists: ${state?.quizData?.length || 0}`);
+            
+            // Reset local peek if we move to a new question
+            if (gameState && (state.activeArtistIndex !== gameState.activeArtistIndex || state.activeTier !== gameState.activeTier)) {
+                localPeek = false;
+            }
+            
+            gameState = state;
+            updateUI();
+        });
+
+        function updateUI() {
+            if (!gameState || !gameState.quizData || gameState.quizData.length === 0) {
+                document.getElementById('quiz-info').style.display = 'none';
+                document.getElementById('game-status').innerText = 'Idle';
+                return;
+            }
+
+            document.getElementById('quiz-info').style.display = 'block';
+            document.getElementById('game-status').innerText = `Round ${gameState.activeArtistIndex + 1}/${gameState.quizData.length}`;
+            
+            const artist = gameState.quizData[gameState.activeArtistIndex];
+            document.getElementById('artist-name').innerText = artist.artist;
+
+            const isUnlock = gameState.activeTier === 0;
+            document.getElementById('phase-label').innerText = isUnlock ? '🔓 Unlock Phase' : `Tier ${gameState.activeTier}`;
+            
+            const currentQ = isUnlock ? null : artist.lore_ladder[gameState.activeTier - 1];
+            document.getElementById('question-text').innerText = isUnlock ? 'Phase 1: Identification' : currentQ.spoken_hint;
+
+            // Answer Display
+            const answerDiv = document.getElementById('answer-display');
+            const fullAnswer = isUnlock ? `${artist.artist} - ${artist.unlock_song}` : currentQ.answer;
+            
+            if (gameState.showAnswer || localPeek) {
+                answerDiv.innerHTML = `<div class="answer-text">${fullAnswer}</div>`;
+            } else {
+                answerDiv.innerHTML = `<div class="hidden-answer">🔒 Tap to peek (Hidden on Presentation)</div>`;
+            }
+
+            // Buttons
+            document.getElementById('btn-reveal').disabled = gameState.showAnswer;
+            document.getElementById('btn-prev').disabled = gameState.activeArtistIndex === 0 && gameState.activeTier === 0;
+            
+            const isFinal = gameState.activeArtistIndex === gameState.quizData.length - 1 && gameState.activeTier === 5 && gameState.showAnswer;
+            document.getElementById('btn-next').innerText = isFinal ? '🏁 Finish' : 'Next ➡';
+            document.getElementById('btn-next').className = isFinal ? 'primary' : 'primary';
+            if (isFinal) document.getElementById('btn-next').style.background = '#1db954';
+            else document.getElementById('btn-next').style.background = '';
+
+            document.getElementById('btn-board').style.border = gameState.showBoard ? '2px solid var(--primary)' : 'none';
+            document.getElementById('btn-leaderboard').style.border = gameState.showLeaderboard ? '2px solid var(--primary)' : 'none';
+
+            const spotifyUri = isUnlock ? artist.unlock_song_uri : currentQ?.audio_hint_uri;
+            document.getElementById('btn-spotify').disabled = !spotifyUri;
+            document.getElementById('btn-spotify').innerText = spotifyUri ? '🎵 Play Spotify' : '❌ No Track';
+
+            // Teams
+            const teamList = document.getElementById('team-list');
+            teamList.innerHTML = '';
+            const currentTierPts = isUnlock ? 10 : (currentQ?.points || 10);
+
+            gameState.teams.forEach((t, i) => {
+                const div = document.createElement('div');
+                div.className = 'team-row';
                 
-                card.innerHTML = `
+                const allInLabel = t.allInUsed ? (gameState.allInActive ? '🔥 ACTIVE' : '🔒 USED') : 'All-In';
+                const allInClass = (gameState.allInActive && t.allInUsed) ? 'active' : '';
+
+                div.innerHTML = `
                     <div class="team-header">
-                        <strong>${team.name}</strong>
-                        <span class="team-score">${team.score}</span>
+                        <span><strong>${t.name}</strong></span>
+                        <span class="team-pts">${t.score} pts</span>
                     </div>
-                    <div class="score-buttons">
-                        <button class="btn-plus" onclick="addPoints(${idx}, ${currentPts})">+${currentPts}</button>
-                        <button class="btn-plus" onclick="addPoints(${idx}, 5)">+5</button>
-                        <button class="btn-minus" onclick="addPoints(${idx}, -5)">-5</button>
-                        <button class="btn-allin ${team.allInUsed ? 'used' : ''}" onclick="toggleAllIn(${idx})">
-                            ${state.allInActive && team.allInUsed ? 'OFF' : 'ALL-IN'}
-                        </button>
+                    <div class="score-actions">
+                        <button onclick="addPoints(${i}, -${currentTierPts})" style="background:#dc3545">-${currentTierPts}</button>
+                        <button onclick="addPoints(${i}, -5)" style="background:#ff4444">-5</button>
+                        <button onclick="addPoints(${i}, 5)" style="background:#28a745">+5</button>
+                        <button onclick="addPoints(${i}, ${currentTierPts})" style="background:#1db954">+${currentTierPts}</button>
+                        <button class="all-in-btn ${allInClass}" onclick="toggleAllIn(${i})" ${ (t.allInUsed && !gameState.allInActive) ? 'disabled' : ''}>${allInLabel}</button>
                     </div>
                 `;
-                container.appendChild(card);
+                teamList.appendChild(div);
             });
         }
 
-        function addPoints(idx, pts) {
-            let newState = JSON.parse(JSON.stringify(state));
+        // Logic Helpers
+        function broadcast(s) {
+            socket.emit('broadcast-state', s);
+        }
+
+        function addPoints(teamIdx, pts) {
+            const s = JSON.parse(JSON.stringify(gameState));
             let multiplier = 1;
-            if (newState.allInActive && pts > 0) multiplier = 2;
-            newState.teams[idx].score += (pts * multiplier);
-            socket.emit('broadcast-state', newState);
+            if (s.allInActive && pts > 0) multiplier = 2;
+            s.teams[teamIdx].score += (pts * multiplier);
+            broadcast(s);
         }
 
         function toggleAllIn(idx) {
-            let newState = JSON.parse(JSON.stringify(state));
-            if (!newState.allInActive) {
-                if (newState.teams[idx].allInUsed) return;
-                newState.teams[idx].allInUsed = true;
-                newState.allInActive = true;
+            const s = JSON.parse(JSON.stringify(gameState));
+            if (s.teams[idx].allInUsed && !s.allInActive) return;
+            
+            if (!s.allInActive) {
+                s.teams[idx].allInUsed = true;
+                s.allInActive = true;
             } else {
-                newState.allInActive = false;
+                s.allInActive = false;
             }
-            socket.emit('broadcast-state', newState);
+            broadcast(s);
         }
 
-        function sendAction(type) {
-            let newState = JSON.parse(JSON.stringify(state));
-            if (type === 'next') {
-                newState.showAnswer = false;
-                newState.allInActive = false;
-                newState.showBoard = false;
-                if (newState.activeTier < 5) newState.activeTier++;
-                else if (newState.activeArtistIndex < newState.quizData.length - 1) {
-                    newState.activeArtistIndex++;
-                    newState.activeTier = 0;
-                } else newState.winnerMode = true;
-            } else if (type === 'prev') {
-                newState.showAnswer = false;
-                newState.allInActive = false;
-                newState.showBoard = false;
-                if (newState.activeTier > 0) newState.activeTier--;
-                else if (newState.activeArtistIndex > 0) {
-                    newState.activeArtistIndex--;
-                    newState.activeTier = 5;
-                }
-            } else if (type === 'reveal') {
-                newState.showAnswer = true;
-            } else if (type === 'board') {
-                newState.showBoard = !newState.showBoard;
-            } else if (type === 'leaderboard') {
-                newState.showLeaderboard = !newState.showLeaderboard;
-            } else if (type === 'spotify') {
-                const artist = state.quizData[state.activeArtistIndex];
-                const uri = state.activeTier === 0 ? artist.unlock_song_uri : artist.lore_ladder[state.activeTier-1].audio_hint_uri;
-                if (uri) window.location.href = uri;
+        document.getElementById('btn-stop').onclick = () => {
+            if (confirm('Stop hosting and exit?')) {
+                broadcast({ ...gameState, quizData: [] });
             }
-            socket.emit('broadcast-state', newState);
+        };
+
+        document.getElementById('btn-board').onclick = () => {
+            broadcast({ ...gameState, showBoard: !gameState.showBoard });
+        };
+
+        document.getElementById('btn-leaderboard').onclick = () => {
+            broadcast({ ...gameState, showLeaderboard: !gameState.showLeaderboard });
+        };
+
+        document.getElementById('answer-card').onclick = () => {
+            localPeek = !localPeek;
+            updateUI();
+        };
+
+        document.getElementById('btn-next').onclick = () => {
+            broadcast(getNextState(gameState));
+        };
+
+        document.getElementById('btn-prev').onclick = () => {
+            if (gameState.winnerMode) {
+                broadcast({ ...gameState, winnerMode: false });
+            } else {
+                broadcast(getPrevState(gameState));
+            }
+        };
+
+        document.getElementById('btn-reveal').onclick = () => {
+            broadcast({ ...gameState, showAnswer: true });
+        };
+
+        document.getElementById('btn-spotify').onclick = () => {
+            const isUnlock = gameState.activeTier === 0;
+            const artist = gameState.quizData[gameState.activeArtistIndex];
+            const uri = isUnlock ? artist.unlock_song_uri : artist.lore_ladder[gameState.activeTier - 1].audio_hint_uri;
+            
+            if (uri) {
+                if (gameState.spotifyMobileMode === 'mobile_app') {
+                    // Jump straight to Spotify App - using assign avoids opening a new browser tab
+                    window.location.assign(uri);
+                } else if (gameState.spotifyMobileMode === 'mobile_web') {
+                    // Open Browser Web Player
+                    const parts = uri.split(':');
+                    if (parts.length >= 3) {
+                        const url = `https://open.spotify.com/${parts[1]}/${parts[2]}`;
+                        window.open(url, '_blank');
+                    } else {
+                        const url = uri.replace('spotify:', 'https://open.spotify.com/').replace(/:/g, '/');
+                        window.open(url, '_blank');
+                    }
+                } else {
+                    // Default: Control Desktop
+                    socket.emit('spotify-trigger', uri);
+                }
+            }
+        };
+
+        function getNextState(state) {
+            const s = JSON.parse(JSON.stringify(state));
+            s.showAnswer = false;
+            s.allInActive = false;
+            s.showBoard = false;
+            if (s.activeTier < 5) s.activeTier++;
+            else if (s.activeArtistIndex < s.quizData.length - 1) {
+                s.activeArtistIndex++;
+                s.activeTier = 0;
+            } else s.winnerMode = true;
+            return s;
+        }
+
+        function getPrevState(state) {
+            const s = JSON.parse(JSON.stringify(state));
+            s.showAnswer = false;
+            s.allInActive = false;
+            s.showBoard = false;
+            if (s.activeTier > 0) s.activeTier--;
+            else if (s.activeArtistIndex > 0) {
+                s.activeArtistIndex--;
+                s.activeTier = 5;
+            }
+            return s;
         }
     </script>
 </body>
-
 </html>

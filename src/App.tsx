@@ -65,10 +65,10 @@ const MainLayout: React.FC = () => {
                     <Setup />
                 </div>
                 <div style={{ display: activeTab === 'builder' ? 'block' : 'none' }}>
-                    <Builder />
+                    <Builder isActive={activeTab === 'builder'} />
                 </div>
                 <div style={{ display: activeTab === 'dashboard' ? 'block' : 'none' }}>
-                    <Dashboard />
+                    <Dashboard isActive={activeTab === 'dashboard'} />
                 </div>
             </main>
 

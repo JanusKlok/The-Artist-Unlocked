@@ -16,12 +16,14 @@ const BACKGROUND_STYLES = ['dark', 'gradient', 'smoky', 'grid-overlay'];
 
 // @ts-ignore
 const getApi = () => window.electronAPI || { 
-    getConfig: async () => ({ geminiKey: '', spotifyClientId: '' }),
-    saveQuiz: async (q: any) => { },
+    getConfig: async () => ({ geminiKey: '', spotifyClientId: '', fanartPersonalApiKey: '' }),
+    saveQuiz: async () => { },
     getQuizzes: async () => [],
+    fetchMbid: async (_artist: string) => null,
+    fetchFanart: async (_mbid: string, _key: string, _id: number) => null,
 };
 
-const Builder: React.FC = () => {
+const Builder: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
     const navigate = useNavigate();
     const [config, setConfig] = useState<any>(null);
     const [artists, setArtists] = useState<string[]>(['', '', '', '', '']);
@@ -60,6 +62,13 @@ const Builder: React.FC = () => {
         getApi().getQuizzes().then(setSavedQuizzes);
     }, []);
 
+    // Reload quizzes when the tab becomes active
+    useEffect(() => {
+        if (isActive) {
+            getApi().getQuizzes().then(setSavedQuizzes);
+        }
+    }, [isActive]);
+
     const openSearch = (initialQuery: string, artist: string, onSelect: (track: SpotifyTrack) => void) => {
         setSearchModal({
             isOpen: true,
@@ -90,76 +99,26 @@ const Builder: React.FC = () => {
         setQuizData(quiz.data);
     };
 
+    const handleDeleteQuiz = async (e: React.MouseEvent, quizId: number, quizName: string) => {
+        e.stopPropagation();
+        if (window.confirm(`Are you sure you want to delete "${quizName}"?`)) {
+            const success = await getApi().deleteQuiz(quizId);
+            if (success) {
+                setSavedQuizzes(prev => prev.filter(q => q.id !== quizId));
+            } else {
+                alert('Failed to delete quiz.');
+            }
+        }
+    };
+
     const resetBuilder = () => {
         setQuizData([]);
         setEditingQuizId(null);
         setQuizName(`My Awesome Quiz - ${new Date().toLocaleDateString()}`);
         setArtists(['', '', '', '', '']);
         setIsGenerating(false);
-        setCurrentGeneratingIdx(-1);
         setCurrentError(null);
-    };
-
-    const generateSingleArtist = async (idx: number) => {
-        const artist = artists[idx];
-        if (!artist.trim()) return true;
-
-        try {
-            setCurrentError(null);
-            setCurrentGeneratingIdx(idx);
-            setStatusText(`🤖 Generating trivia for ${artist}...`);
-            
-            const mod = DIFFICULTY_MAP[difficulty];
-            const res = await generateArtistTrivia(config.geminiKey, artist, mod, config.geminiModel);
-
-            // Spotify Phase
-            if (config.spotifyClientId) {
-                setStatusText(`🎵 Searching Spotify for ${artist}'s tracks...`);
-                
-                const findTrack = async (song: string) => {
-                    const query = `track:${song} artist:${artist}`;
-                    const results = await searchTracks(config.spotifyClientId, config.spotifyClientSecret, query);
-                    
-                    if (results.length === 1) return results[0];
-                    if (results.length > 1) {
-                        return new Promise<SpotifyTrack>((resolve) => {
-                            openSearch(song + ' ' + artist, artist, (track) => {
-                                resolve(track);
-                                setSearchModal(prev => ({ ...prev, isOpen: false }));
-                            });
-                        });
-                    }
-                    return null;
-                };
-
-                const unlockTrack = await findTrack(res.unlock_song);
-                if (unlockTrack) {
-                    res.unlock_song_uri = unlockTrack.uri;
-                    res.unlock_song_name = unlockTrack.name;
-                    res.unlock_song_image = unlockTrack.image;
-                }
-
-                for (let i = 0; i < res.lore_ladder.length; i++) {
-                    const item = res.lore_ladder[i];
-                    if (item.audio_hint_song) {
-                        setStatusText(`🎵 Finding audio hint ${i + 1}/5 for ${artist}...`);
-                        const hintTrack = await findTrack(item.audio_hint_song);
-                        if (hintTrack) {
-                            item.audio_hint_uri = hintTrack.uri;
-                            item.audio_hint_name = hintTrack.name;
-                            item.audio_hint_image = hintTrack.image;
-                        }
-                    }
-                }
-            }
-
-            setQuizData(prev => [...prev, res]);
-            return true;
-        } catch (e: any) {
-            console.error(e);
-            setCurrentError(`Error at ${artist}: ${e.message}`);
-            return false;
-        }
+        setCurrentGeneratingIdx(-1);
     };
 
     const handleGenerate = async () => {
@@ -169,28 +128,90 @@ const Builder: React.FC = () => {
         if (validArtists.length === 0) return alert('Enter at least one artist!');
 
         setIsGenerating(true);
-        setQuizData([]); 
+        setCurrentError(null);
+        setQuizData([]);
+        setStatusText('🤖 Generating trivia for all artists...');
 
-        for (let i = 0; i < artists.length; i++) {
-            if (!artists[i].trim()) continue;
-            const success = await generateSingleArtist(i);
-            if (!success) break;
+        try {
+            // Get fresh configuration
+            const currentConfig = await getApi().getConfig();
+            setConfig(currentConfig);
+
+            const mod = DIFFICULTY_MAP[difficulty];
+            const batchResults = await generateArtistTrivia(currentConfig.geminiKey, validArtists, mod, currentConfig.geminiModel);
+
+            for (let i = 0; i < batchResults.length; i++) {
+                const res = batchResults[i];
+                const artist = res.artist;
+                setCurrentGeneratingIdx(i);
+
+                // Spotify Phase
+                if (currentConfig.spotifyClientId) {
+                    setStatusText(`🎵 Searching Spotify for ${artist}'s tracks...`);
+
+                    const findTrack = async (song: string) => {
+                        const query = `track:${song} artist:${artist}`;
+                        const results = await searchTracks(currentConfig.spotifyClientId, currentConfig.spotifyClientSecret, query);
+
+                        if (results.length === 1) return results[0];
+                        if (results.length > 1) {
+                            return new Promise<SpotifyTrack>((resolve) => {
+                                openSearch(song + ' ' + artist, artist, (track) => {
+                                    resolve(track);
+                                    setSearchModal(prev => ({ ...prev, isOpen: false }));
+                                });
+                            });
+                        }
+                        return null;
+                    };
+
+                    const unlockTrack = await findTrack(res.unlock_song);
+                    if (unlockTrack) {
+                        res.unlock_song_uri = unlockTrack.uri;
+                        res.unlock_song_name = unlockTrack.name;
+                        res.unlock_song_image = unlockTrack.image;
+                    }
+
+                    for (let j = 0; j < res.lore_ladder.length; j++) {
+                        const item = res.lore_ladder[j];
+                        if (item.audio_hint_song) {
+                            setStatusText(`🎵 Finding audio hint ${j + 1}/5 for ${artist}...`);
+                            const hintTrack = await findTrack(item.audio_hint_song);
+                            if (hintTrack) {
+                                item.audio_hint_uri = hintTrack.uri;
+                                item.audio_hint_name = hintTrack.name;
+                                item.audio_hint_image = hintTrack.image;
+                            }
+                        }
+                    }
+                }
+
+                // Fanart Phase
+                if (currentConfig.fanartPersonalApiKey) {
+                    setStatusText(`🖼️ Fetching Fanart for ${artist}...`);
+                    const mbid = await getApi().fetchMbid(artist);
+                    if (mbid) {
+                        const quizId = editingQuizId || Date.now();
+                        const fanart = await getApi().fetchFanart(mbid, currentConfig.fanartPersonalApiKey, quizId);
+                        if (fanart) {
+                            res.fanart_logo = fanart.logoUrl;
+                            res.fanart_backgrounds = fanart.backgroundUrls;
+                        }
+                    }
+                }
+
+                setQuizData(prev => [...prev, res]);
+            }
+        } catch (e: any) {
+            console.error(e);
+            setCurrentError(`Generation failed: ${e.message}`);
+        } finally {
+            setIsGenerating(false);
         }
-        setIsGenerating(false);
     };
 
-    const handleRetry = async () => {
-        if (currentGeneratingIdx === -1) return;
-        setIsGenerating(true);
-        const success = await generateSingleArtist(currentGeneratingIdx);
-        if (success) {
-            for (let i = currentGeneratingIdx + 1; i < artists.length; i++) {
-                if (!artists[i].trim()) continue;
-                const nextSuccess = await generateSingleArtist(i);
-                if (!nextSuccess) break;
-            }
-        }
-        setIsGenerating(false);
+    const handleRetry = () => {
+        handleGenerate();
     };
 
     const updateQuestion = (aIdx: number, tIdx: number, field: string, value: any) => {
@@ -211,6 +232,30 @@ const Builder: React.FC = () => {
             newData[aIdx][field] = value;
         }
         setQuizData(newData);
+    };
+
+    const handleFileUpload = (aIdx: number, field: string, file: File) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            if (e.target?.result) {
+                if (field === 'fanart_backgrounds') {
+                    const currentBgs = quizData[aIdx].fanart_backgrounds || [];
+                    if (currentBgs.length < 5) {
+                        updateArtist(aIdx, 'fanart_backgrounds', [...currentBgs, e.target.result as string]);
+                    } else {
+                        alert("Maximum 5 backgrounds allowed.");
+                    }
+                } else {
+                    updateArtist(aIdx, field, e.target.result as string);
+                }
+            }
+        };
+        reader.readAsDataURL(file);
+    };
+
+    const removeBackground = (aIdx: number, bgIdx: number) => {
+        const currentBgs = quizData[aIdx].fanart_backgrounds || [];
+        updateArtist(aIdx, 'fanart_backgrounds', currentBgs.filter((_, i) => i !== bgIdx));
     };
 
     const saveQuiz = async (goToDashboard = false) => {
@@ -238,7 +283,7 @@ const Builder: React.FC = () => {
             <div className="glass-panel">
                 <h1 style={{ textAlign: 'center', color: 'var(--primary)', marginBottom: '2rem' }}>🎨 Quiz Builder</h1>
 
-                {quizData.length === 0 && !isGenerating ? (
+                {quizData.length === 0 && !isGenerating && !currentError ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
                         {/* Load Saved Quiz Section */}
                         {savedQuizzes.length > 0 && (
@@ -246,24 +291,43 @@ const Builder: React.FC = () => {
                                 <h3 style={{ margin: 0, color: 'var(--secondary)' }}>📂 Edit a Saved Quiz</h3>
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '0.75rem' }}>
                                     {savedQuizzes.map((q, idx) => (
-                                        <button
-                                            key={idx}
-                                            onClick={() => loadQuizForEditing(q)}
-                                            style={{
-                                                background: 'rgba(255,255,255,0.05)',
-                                                border: '1px solid rgba(255,255,255,0.15)',
-                                                boxShadow: 'none',
-                                                textAlign: 'left',
-                                                padding: '1rem 1.25rem',
-                                                display: 'flex',
-                                                flexDirection: 'column',
-                                                gap: '0.25rem',
-                                                transition: 'all 0.2s'
-                                            }}
-                                        >
-                                            <span style={{ fontSize: '1.05rem', fontWeight: 600 }}>{q.name}</span>
-                                            <span style={{ fontSize: '0.8rem', color: '#aaa', textTransform: 'none', letterSpacing: 0 }}>{q.data.length} artists</span>
-                                        </button>
+                                        <div key={idx} style={{ position: 'relative' }}>
+                                            <button
+                                                onClick={() => loadQuizForEditing(q)}
+                                                style={{
+                                                    background: 'rgba(255,255,255,0.05)',
+                                                    border: '1px solid rgba(255,255,255,0.15)',
+                                                    boxShadow: 'none',
+                                                    textAlign: 'left',
+                                                    padding: '1rem 1.25rem',
+                                                    display: 'flex',
+                                                    flexDirection: 'column',
+                                                    gap: '0.25rem',
+                                                    transition: 'all 0.2s',
+                                                    width: '100%'
+                                                }}
+                                            >
+                                                <span style={{ fontSize: '1.05rem', fontWeight: 600 }}>{q.name}</span>
+                                                <span style={{ fontSize: '0.8rem', color: '#aaa', textTransform: 'none', letterSpacing: 0 }}>{q.data.length} artists</span>
+                                            </button>
+                                            <button
+                                                onClick={(e) => handleDeleteQuiz(e, q.id, q.name)}
+                                                style={{
+                                                    position: 'absolute',
+                                                    top: '0.5rem',
+                                                    right: '0.5rem',
+                                                    background: 'rgba(255, 68, 68, 0.1)',
+                                                    border: '1px solid rgba(255, 68, 68, 0.3)',
+                                                    color: '#ff4444',
+                                                    padding: '0.2rem 0.5rem',
+                                                    fontSize: '0.7rem',
+                                                    borderRadius: '4px',
+                                                    boxShadow: 'none'
+                                                }}
+                                            >
+                                                Delete
+                                            </button>
+                                        </div>
                                     ))}
                                 </div>
                                 <hr style={{ margin: '0.5rem 0', borderColor: 'rgba(255,255,255,0.08)' }} />
@@ -362,14 +426,30 @@ const Builder: React.FC = () => {
                                     </div>
                                 </div>
 
-                                <div style={{ background: 'rgba(29, 185, 84, 0.1)', padding: '1.25rem', borderRadius: '12px', marginBottom: '1.5rem', border: '1px solid #1db95444' }}>
-                                    <strong style={{ color: '#1db954', display: 'block', marginBottom: '0.75rem' }}>🔓 Phase 1: The Unlock</strong>
+                                <div style={{ 
+                                    background: data.unlock_song_uri ? 'rgba(29, 185, 84, 0.1)' : 'rgba(255, 68, 68, 0.1)', 
+                                    padding: '1.25rem', 
+                                    borderRadius: '12px', 
+                                    marginBottom: '1.5rem', 
+                                    border: data.unlock_song_uri ? '1px solid #1db95444' : '2px solid #ff4444' 
+                                }}>
+                                    <strong style={{ color: data.unlock_song_uri ? '#1db954' : '#ff4444', display: 'block', marginBottom: '0.75rem' }}>
+                                        🔓 Phase 1: The Unlock {!data.unlock_song_uri && '⚠️ (MISSING TRACK)'}
+                                    </strong>
                                     <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
                                         {data.unlock_song_image && <img src={data.unlock_song_image} style={{ width: '60px', height: '60px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)' }} alt="Album Art" />}
                                         <div style={{ flex: 1 }}>
                                             <label style={{ fontSize: '0.8rem', color: '#ccc', display: 'block', marginBottom: '0.3rem' }}>Selected Spotify Track</label>
                                             <div style={{ display: 'flex', gap: '0.5rem' }}>
-                                                <input value={data.unlock_song_name || 'No track selected...'} readOnly style={{ background: 'rgba(0,0,0,0.2)', color: data.unlock_song_name ? '#fff' : '#777' }} />
+                                                <input 
+                                                    value={data.unlock_song_name || 'No track selected...'} 
+                                                    readOnly 
+                                                    style={{ 
+                                                        background: 'rgba(0,0,0,0.2)', 
+                                                        color: data.unlock_song_name ? '#fff' : '#ff4444',
+                                                        border: data.unlock_song_uri ? '' : '1px solid #ff4444'
+                                                    }} 
+                                                />
                                                 <button className="btn-sm" onClick={() => openSearch(data.unlock_song + ' ' + data.artist, data.artist, (track) => {
                                                     updateArtist(aIdx, 'unlock_song_uri', track.uri);
                                                     updateArtist(aIdx, 'unlock_song_name', track.name);
@@ -380,11 +460,78 @@ const Builder: React.FC = () => {
                                     </div>
                                 </div>
 
+                                {/* Artist Assets / Fanart Section */}
+                                <div style={{ background: 'rgba(255, 255, 255, 0.05)', padding: '1.25rem', borderRadius: '12px', marginBottom: '1.5rem', border: '1px solid rgba(255,255,255,0.1)' }}>
+                                    <strong style={{ display: 'block', marginBottom: '1rem', borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '0.5rem' }}>🖼️ Artist Assets</strong>
+                                    
+                                    <div style={{ display: 'flex', gap: '2rem', flexWrap: 'wrap' }}>
+                                        {/* Logo Column */}
+                                        <div style={{ flex: 1, minWidth: '200px' }}>
+                                            <label style={{ fontSize: '0.85rem', color: '#ccc', display: 'block', marginBottom: '0.5rem' }}>Artist Logo</label>
+                                            {data.fanart_logo ? (
+                                                <div style={{ position: 'relative', display: 'inline-block', background: 'rgba(0,0,0,0.5)', padding: '1rem', borderRadius: '8px' }}>
+                                                    <img src={data.fanart_logo} alt="Artist Logo" style={{ maxHeight: '60px', objectFit: 'contain' }} />
+                                                    <button 
+                                                        onClick={() => updateArtist(aIdx, 'fanart_logo', '')}
+                                                        style={{ position: 'absolute', top: -10, right: -10, background: '#ff4444', borderRadius: '50%', width: '24px', height: '24px', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px' }}
+                                                    >✕</button>
+                                                </div>
+                                            ) : (
+                                                <div style={{ padding: '1rem', background: 'rgba(0,0,0,0.2)', borderRadius: '8px', border: '1px dashed rgba(255,255,255,0.2)', textAlign: 'center' }}>
+                                                    <p style={{ opacity: 0.5, fontSize: '0.8rem', margin: '0 0 0.5rem 0' }}>No logo.</p>
+                                                    <label className="btn-sm btn-ghost" style={{ cursor: 'pointer', display: 'inline-block' }}>
+                                                        Upload Logo
+                                                        <input type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => { 
+                                                            if (e.target.files && e.target.files[0]) handleFileUpload(aIdx, 'fanart_logo', e.target.files[0]);
+                                                        }} />
+                                                    </label>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Backgrounds Column */}
+                                        <div style={{ flex: 2, minWidth: '300px' }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                                                <label style={{ fontSize: '0.85rem', color: '#ccc' }}>Backgrounds ({(data.fanart_backgrounds || []).length}/5)</label>
+                                                {(data.fanart_backgrounds || []).length < 5 && (
+                                                    <label className="btn-sm btn-ghost" style={{ cursor: 'pointer', padding: '0.2rem 0.5rem', fontSize: '0.7rem' }}>
+                                                        + Add
+                                                        <input type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => {
+                                                            if (e.target.files && e.target.files[0]) handleFileUpload(aIdx, 'fanart_backgrounds', e.target.files[0]);
+                                                        }} />
+                                                    </label>
+                                                )}
+                                            </div>
+                                            
+                                            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                                {(data.fanart_backgrounds || []).map((bg, bgIdx) => (
+                                                    <div key={bgIdx} style={{ position: 'relative', width: '80px', height: '45px', borderRadius: '4px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.2)' }}>
+                                                        <img src={bg} alt={`Background ${bgIdx+1}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                                        <button 
+                                                            onClick={() => removeBackground(aIdx, bgIdx)}
+                                                            style={{ position: 'absolute', top: 2, right: 2, background: 'rgba(255,68,68,0.8)', borderRadius: '50%', width: '16px', height: '16px', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px' }}
+                                                        >✕</button>
+                                                    </div>
+                                                ))}
+                                                {(data.fanart_backgrounds || []).length === 0 && (
+                                                    <p style={{ opacity: 0.5, fontSize: '0.8rem', margin: 0 }}>No custom backgrounds.</p>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                                     {data.lore_ladder.map((q, tIdx) => (
-                                        <div key={q.tier} style={{ background: 'rgba(0,0,0,0.4)', padding: '1rem', borderRadius: '8px', borderLeft: `4px solid ${data.visual_theme.primary_color}` }}>
+                                        <div key={q.tier} style={{ 
+                                            background: 'rgba(0,0,0,0.4)', 
+                                            padding: '1rem', 
+                                            borderRadius: '8px', 
+                                            borderLeft: `4px solid ${data.visual_theme.primary_color}`,
+                                            borderRight: q.audio_hint_uri ? '' : '2px solid #ff4444'
+                                        }}>
                                             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                                                <strong style={{ color: 'var(--secondary)' }}>Tier {q.tier} - {q.target}</strong>
+                                                <strong style={{ color: 'var(--secondary)' }}>Tier {q.tier} - {q.target} {!q.audio_hint_uri && '⚠️'}</strong>
                                                 <span>
                                                     Points: <input type="number" value={q.points} style={{ width: '80px', padding: '0.2rem' }} onChange={e => updateQuestion(aIdx, tIdx, 'points', parseInt(e.target.value) || 0)} />
                                                 </span>
@@ -395,14 +542,26 @@ const Builder: React.FC = () => {
                                                 style={{ minHeight: '60px', marginBottom: '0.75rem' }}
                                                 placeholder="Spoken Hint..."
                                             />
-                                            <div style={{ background: 'rgba(255,255,255,0.03)', padding: '0.75rem', borderRadius: '8px', display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                                            <div style={{ 
+                                                background: q.audio_hint_uri ? 'rgba(255,255,255,0.03)' : 'rgba(255, 68, 68, 0.1)', 
+                                                padding: '0.75rem', 
+                                                borderRadius: '8px', 
+                                                display: 'flex', 
+                                                gap: '1rem', 
+                                                alignItems: 'center',
+                                                border: q.audio_hint_uri ? 'none' : '1px solid #ff4444'
+                                            }}>
                                                 {q.audio_hint_image && <img src={q.audio_hint_image} style={{ width: '45px', height: '45px', borderRadius: '4px' }} alt="Art" />}
                                                 <div style={{ flex: 1 }}>
                                                     <div style={{ display: 'flex', gap: '0.5rem' }}>
                                                         <input
                                                             value={q.audio_hint_name || 'No track selected...'}
                                                             readOnly
-                                                            style={{ background: 'rgba(0,0,0,0.2)', color: q.audio_hint_name ? '#fff' : '#777', flex: 1 }}
+                                                            style={{ 
+                                                                background: 'rgba(0,0,0,0.2)', 
+                                                                color: q.audio_hint_name ? '#fff' : '#ff4444', 
+                                                                flex: 1 
+                                                            }}
                                                         />
                                                         <button className="btn-sm" onClick={() => openSearch(q.audio_hint_song + ' ' + data.artist, data.artist, (track) => {
                                                             updateQuestion(aIdx, tIdx, 'audio_hint_uri', track.uri);
@@ -426,12 +585,12 @@ const Builder: React.FC = () => {
                             </div>
                         ))}
 
-                        {!isGenerationComplete && isGenerating && (
+                        {!isGenerationComplete && (isGenerating || currentError) && (
                             <div style={{ background: 'rgba(0,0,0,0.4)', border: '2px dashed rgba(255,255,255,0.2)', borderRadius: '12px', padding: '2rem', textAlign: 'center', marginBottom: '2rem' }}>
                                 {currentError ? (
                                     <div style={{ animation: 'shake 0.5s' }}>
                                         <h3 style={{ color: '#ff4444', marginBottom: '1rem' }}>⚠️ Generation Halted</h3>
-                                        <p style={{ marginBottom: '1.5rem', opacity: 0.8 }}>{currentError}</p>
+                                        <p style={{ marginBottom: '1.5rem', opacity: 0.8, wordBreak: 'break-word' }}>{currentError}</p>
                                         <button onClick={handleRetry} style={{ background: '#ff4444' }}>Retry Step</button>
                                     </div>
                                 ) : (
