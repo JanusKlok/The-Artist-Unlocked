@@ -131,8 +131,12 @@ app.whenReady().then(() => {
     // Handle the custom asset:// protocol
     protocol.handle('asset', (request) => {
         const url = request.url.replace('asset://', '');
-        // Assets are stored in the quizzes directory
         const filePath = path.join(quizzesDir, decodeURIComponent(url));
+        // Prevent path traversal attacks
+        const resolved = path.resolve(filePath);
+        if (!resolved.startsWith(path.resolve(quizzesDir))) {
+            return new Response('Forbidden', { status: 403 });
+        }
         return net.fetch('file://' + filePath);
     });
 
@@ -301,6 +305,7 @@ ipcMain.handle('delete-quiz', async (event, quizId) => {
 
 // Mode C Local Server Spin-up
 let latestGameState: any = null;
+let cachedQuizData: any[] = [];
 let currentRemoteGuid: string = '';
 let previousRemoteGuid: string = ''; // Grace period for rotation
 
@@ -312,7 +317,14 @@ ipcMain.handle('update-remote-guid', (event, guid) => {
 });
 
 ipcMain.on('broadcast-state', (event, state) => {
-    latestGameState = state;
+    // Cache quizData separately; only include in full state for new connections
+    if (state.quizData) {
+        cachedQuizData = state.quizData;
+    }
+    // Full state always available for new connections
+    latestGameState = state.quizData ? state : { ...state, quizData: cachedQuizData };
+
+    // Forward the (possibly lightweight) state to all windows and sockets
     BrowserWindow.getAllWindows().forEach(win => {
         if (!win.isDestroyed() && !win.webContents.isDestroyed()) {
             win.webContents.send('state-updated', state);
@@ -350,11 +362,12 @@ ipcMain.handle('start-remote-server', async (event, initialGuid) => {
         return next(new Error('AUTH_FAILED'));
     });
 
-    // Serve the dedicated mobile quizmaster remote control page
+    // Serve the dedicated mobile quizmaster remote control page (cached in memory)
     const mobilePath = path.join(__dirname, '../public/mobile-remote.html');
+    let mobileHtmlCache: string | null = null;
     expressApp.get('/', (req: any, res: any) => {
         const urlGuid = req.query.auth;
-        
+
         if (urlGuid !== currentRemoteGuid && urlGuid !== previousRemoteGuid) {
             return res.status(403).send(`
                 <body style="background:#111;color:#eee;display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;text-align:center;padding:2rem;">
@@ -367,11 +380,14 @@ ipcMain.handle('start-remote-server', async (event, initialGuid) => {
             `);
         }
 
-        if (fs.existsSync(mobilePath)) {
-            res.type('html').send(fs.readFileSync(mobilePath, 'utf8'));
-        } else {
-            res.status(404).send('Mobile remote page not found.');
+        if (!mobileHtmlCache) {
+            if (fs.existsSync(mobilePath)) {
+                mobileHtmlCache = fs.readFileSync(mobilePath, 'utf8');
+            } else {
+                return res.status(404).send('Mobile remote page not found.');
+            }
         }
+        res.type('html').send(mobileHtmlCache);
     });
 
     server.listen(3001, '0.0.0.0', () => { // Bind to all interfaces explicitly

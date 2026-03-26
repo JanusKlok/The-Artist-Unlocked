@@ -14,14 +14,21 @@ const ANIMATION_TYPES = ['lightning', 'bubbles', 'neon_grid', 'spotlight', 'equa
 const FONT_STYLES = ['heavy', 'elegant', 'grunge', 'retro'];
 const BACKGROUND_STYLES = ['dark', 'gradient', 'smoky', 'grid-overlay'];
 
-// @ts-ignore
-const getApi = () => window.electronAPI || { 
-    getConfig: async () => ({ geminiKey: '', spotifyClientId: '', fanartPersonalApiKey: '' }),
-    saveQuiz: async () => { },
+const getApi = () => window.electronAPI || {
+    getConfig: async () => ({ geminiKey: '', geminiModel: '', spotifyClientId: '', spotifyClientSecret: '', fanartPersonalApiKey: '', spotifyMobileMode: 'desktop' }),
+    saveQuiz: async () => true,
     getQuizzes: async () => [],
+    deleteQuiz: async () => true,
     fetchMbid: async (_artist: string) => null,
     fetchFanart: async (_mbid: string, _key: string, _id: number) => null,
-};
+    setConfig: async () => true,
+    openSpotify: async () => {},
+    broadcastState: () => {},
+    startRemoteServer: async () => 'localhost',
+    updateRemoteGuid: async () => true,
+    openPresentationWindow: async () => {},
+    onStateUpdate: () => {},
+} as unknown as typeof window.electronAPI;
 
 const Builder: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
     const navigate = useNavigate();
@@ -53,7 +60,7 @@ const Builder: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
     });
 
     // States for incremental progress
-    const [currentGeneratingIdx, setCurrentGeneratingIdx] = useState<number>(-1);
+    const [_currentGeneratingIdx, setCurrentGeneratingIdx] = useState<number>(-1);
     const [statusText, setStatusText] = useState('');
     const [currentError, setCurrentError] = useState<string | null>(null);
 
@@ -214,22 +221,20 @@ const Builder: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
         handleGenerate();
     };
 
-    const updateQuestion = (aIdx: number, tIdx: number, field: string, value: any) => {
+    const updateQuestion = (aIdx: number, tIdx: number, field: string, value: unknown) => {
         const newData = [...quizData];
-        // @ts-ignore
-        newData[aIdx].lore_ladder[tIdx][field] = value;
+        (newData[aIdx].lore_ladder[tIdx] as Record<string, unknown>)[field] = value;
         setQuizData(newData);
     };
 
-    const updateArtist = (aIdx: number, field: string, value: any) => {
+    const updateArtist = (aIdx: number, field: string, value: unknown) => {
         const newData = [...quizData];
+        const artist = newData[aIdx] as unknown as Record<string, unknown>;
         if (field.includes('.')) {
             const [parent, child] = field.split('.');
-            // @ts-ignore
-            newData[aIdx][parent][child] = value;
+            (artist[parent] as Record<string, unknown>)[child] = value;
         } else {
-            // @ts-ignore
-            newData[aIdx][field] = value;
+            artist[field] = value;
         }
         setQuizData(newData);
     };

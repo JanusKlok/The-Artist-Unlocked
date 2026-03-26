@@ -144,6 +144,15 @@
     text-decoration: underline;
 }
 
+.btn-danger-hosting {
+    margin-right: 1rem;
+}
+
+.btn-danger-delete {
+    width: 100%;
+    margin-top: 0.75rem;
+}
+
 .btn-success {
     background: #1db954;
 }
@@ -175,6 +184,29 @@
     cursor: not-allowed;
     transform: none;
 }
+
+.btn-finish {
+    background: #1db954 !important;
+}
+
+.btn-spotify-disabled {
+    opacity: 0.5;
+}
+
+/* ---- Point Button Colors ---- */
+.btn-pts-neg { background: #dc3545; }
+.btn-pts-neg-sm { background: #ff4444; }
+.btn-pts-pos-sm { background: #28a745; }
+.btn-pts-pos { background: #1db954; }
+
+/* ---- All-In Button States ---- */
+.btn-allin { background: #ffc107; color: #000; }
+.btn-allin-active { background: #ff4444; color: #fff; }
+.btn-allin-used { background: #555; color: #fff; }
+
+/* ---- Leaderboard Toggle ---- */
+.btn-leaderboard-hide { background: #dc3545; }
+.btn-leaderboard-show { background: #1db954; }
 
 /* ---- Divider ---- */
 .dashboard-divider {
@@ -347,7 +379,87 @@
 
 .remote-info .url {
     color: #aaa;
+    font-size: 0.8rem;
+    opacity: 0.7;
+}
+
+/* ---- Timer Controls ---- */
+.timer-controls {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.timer-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.timer-label {
+    font-weight: 600;
     font-size: 0.9rem;
+    color: #aaa;
+}
+
+.timer-input {
+    width: 60px !important;
+    padding: 0.4rem !important;
+    text-align: center;
+    font-size: 0.9rem !important;
+}
+
+.timer-unit {
+    font-size: 0.8rem;
+    color: #888;
+    margin-right: 0.5rem;
+}
+
+.timer-auto-label {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: 0.85rem;
+    color: #aaa;
+    cursor: pointer;
+    margin-right: 0.5rem;
+}
+
+.timer-auto-label input[type="checkbox"] {
+    width: auto;
+    margin: 0;
+}
+
+.btn-timer-start {
+    background: #007bff;
+}
+
+.btn-timer-stop {
+    background: #dc3545;
+}
+
+/* ---- Keyboard Shortcuts ---- */
+.keyboard-hints {
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+    font-size: 0.7rem;
+    color: #555;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+}
+
+.keyboard-hints kbd {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+    padding: 0.1rem 0.35rem;
+    font-family: monospace;
+    font-size: 0.65rem;
+    color: #888;
 }
 
 /* ---- Scoreboard ---- */
@@ -484,11 +596,19 @@
     margin: 0 0 0.5rem 0;
 }
 
+.prompt-label-upper {
+    text-transform: uppercase;
+}
+
 .prompt-text {
     font-size: 1.3rem;
     font-weight: bold;
     margin: 0;
     line-height: 1.5;
+}
+
+.prompt-text-light {
+    font-weight: 400;
 }
 
 .prompt-text.answer-text {
@@ -499,6 +619,16 @@
     color: #aaa;
     font-size: 0.9rem;
     margin: 1rem 0 0 0;
+}
+
+/* ---- Winner Prompt ---- */
+.winner-prompt-title {
+    color: #FFD700;
+    text-align: center;
+}
+
+.winner-prompt-text {
+    text-align: center;
 }
 
 /* ---- Wager Modal ---- */
@@ -531,4 +661,18 @@
 
 .modal-actions > * {
     flex: 1;
+}
+
+.wager-description {
+    margin-bottom: 1.5rem;
+    font-size: 0.9rem;
+}
+
+.wager-entry {
+    margin-bottom: 1rem;
+}
+
+.wager-label {
+    display: block;
+    margin-bottom: 0.3rem;
 }

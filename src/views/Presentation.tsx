@@ -1,14 +1,9 @@
-import React, { useEffect, useState, useMemo } from 'react';
-// @ts-ignore
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import Particles, { initParticlesEngine } from '@tsparticles/react';
-// @ts-ignore
 import { loadFull } from 'tsparticles';
-
-const getApi = () => {
-    // @ts-ignore
-    if (window.electronAPI) return window.electronAPI;
-    return { onStateUpdate: () => { } };
-};
+import type { GameState } from '../utils/gameLogic';
+import type { QuizArtist } from '../services/gemini';
+import { sounds } from '../utils/sounds';
 
 // Font style mapping
 const FONT_MAP: Record<string, string> = {
@@ -27,25 +22,67 @@ const FONT_IMPORTS = [
     'Press+Start+2P',
 ].join('&family=');
 
+const AnimatedScore: React.FC<{ target: number }> = ({ target }) => {
+    const [display, setDisplay] = useState(0);
+    useEffect(() => {
+        const start = performance.now();
+        const duration = 2000;
+        const animate = (now: number) => {
+            const elapsed = now - start;
+            const progress = Math.min(elapsed / duration, 1);
+            const eased = 1 - Math.pow(1 - progress, 3); // ease-out cubic
+            setDisplay(Math.round(eased * target));
+            if (progress < 1) requestAnimationFrame(animate);
+        };
+        requestAnimationFrame(animate);
+    }, [target]);
+    return <>{display}</>;
+};
+
 const Presentation: React.FC = () => {
-    const [gameState, setGameState] = useState<any>(null);
+    const [gameState, setGameState] = useState<GameState | null>(null);
     const [init, setInit] = useState(false);
     const [flash, setFlash] = useState(false);
-    const answerRef = React.useRef<HTMLDivElement>(null);
+    const [timerRemaining, setTimerRemaining] = useState<number | null>(null);
+    const [timerExpired, setTimerExpired] = useState(false);
+    const [transitionKey, setTransitionKey] = useState(0);
+    const answerRef = useRef<HTMLDivElement>(null);
+    const isMountedRef = useRef(true);
+    const quizDataCacheRef = useRef<QuizArtist[]>([]);
+
+    // Refs for tracking previous values (sound effects)
+    const prevShowAnswerRef = useRef(false);
+    const prevAllInActiveRef = useRef(false);
+    const prevWinnerModeRef = useRef(false);
+    const prevArtistIndexRef = useRef(0);
+    const prevTierRef = useRef(0);
+    const lastUrgentTickRef = useRef(0);
+    const buzzerPlayedRef = useRef(false);
 
     useEffect(() => {
-        let isMounted = true;
-        initParticlesEngine(async (engine) => {
+        isMountedRef.current = true;
+        initParticlesEngine(async (engine: any) => {
             await loadFull(engine);
         }).then(() => {
-            if (isMounted) setInit(true);
+            if (isMountedRef.current) setInit(true);
         });
 
-        getApi().onStateUpdate((newState: any) => {
-            if (isMounted) setGameState(newState);
-        });
+        if (window.electronAPI) {
+            window.electronAPI.onStateUpdate((newState: GameState) => {
+                if (!isMountedRef.current) return;
 
-        return () => { isMounted = false; };
+                // Handle partial state updates: merge cached quizData if missing
+                if (!newState.quizData || newState.quizData.length === 0) {
+                    newState = { ...newState, quizData: quizDataCacheRef.current };
+                } else {
+                    quizDataCacheRef.current = newState.quizData;
+                }
+
+                setGameState(newState);
+            });
+        }
+
+        return () => { isMountedRef.current = false; };
     }, []);
 
     // Scroll to top on step change
@@ -66,47 +103,178 @@ const Presentation: React.FC = () => {
 
     // Effect for random lightning flashes
     useEffect(() => {
-        if (!gameState) return;
-        const artist = gameState.quizData[gameState.activeArtistIndex];
-        if (artist?.visual_theme?.animation_type !== 'lightning') return;
+        if (!gameState || !gameState.quizData.length) return;
+        const currentArtist = gameState.quizData[gameState.activeArtistIndex];
+        if (currentArtist?.visual_theme?.animation_type !== 'lightning') return;
 
-        let isMounted = true;
-        let timer: NodeJS.Timeout;
+        let localMounted = true;
+        let timer: ReturnType<typeof setTimeout>;
 
         const triggerFlash = () => {
-            if (!isMounted) return;
+            if (!localMounted) return;
             setFlash(true);
-            setTimeout(() => { if (isMounted) setFlash(false); }, 100 + Math.random() * 200);
-            
+            setTimeout(() => { if (localMounted) setFlash(false); }, 100 + Math.random() * 200);
+
             // Randomly trigger a double flash
             if (Math.random() > 0.7) {
                 setTimeout(() => {
-                    if (!isMounted) return;
+                    if (!localMounted) return;
                     setFlash(true);
-                    setTimeout(() => { if (isMounted) setFlash(false); }, 50 + Math.random() * 100);
+                    setTimeout(() => { if (localMounted) setFlash(false); }, 50 + Math.random() * 100);
                 }, 300);
             }
-            
+
             scheduleNext();
         };
 
         const scheduleNext = () => {
-            if (!isMounted) return;
+            if (!localMounted) return;
             const delay = 3000 + Math.random() * 8000;
             timer = setTimeout(triggerFlash, delay);
         };
 
         scheduleNext();
         return () => {
-            isMounted = false;
+            localMounted = false;
             clearTimeout(timer);
         };
-    }, [gameState]);
+    }, [gameState?.activeArtistIndex, gameState?.quizData?.[gameState?.activeArtistIndex ?? 0]?.visual_theme?.animation_type]);
 
     const artist = useMemo(() => {
         if (!gameState || !gameState.quizData.length) return null;
         return gameState.quizData[gameState.activeArtistIndex];
-    }, [gameState]);
+    }, [gameState?.activeArtistIndex, gameState?.quizData]);
+
+    // Memoize sorted teams
+    const sortedTeams = useMemo(() => {
+        if (!gameState?.teams) return [];
+        return [...gameState.teams].sort((a, b) => b.score - a.score);
+    }, [gameState?.teams]);
+
+    // Sound effect: play reveal sound when answer is shown
+    useEffect(() => {
+        if (gameState?.showAnswer && !prevShowAnswerRef.current) {
+            sounds.playReveal();
+        }
+        prevShowAnswerRef.current = gameState?.showAnswer ?? false;
+    }, [gameState?.showAnswer]);
+
+    // Sound effect: play all-in sound
+    useEffect(() => {
+        if (gameState?.allInActive && !prevAllInActiveRef.current) {
+            sounds.playAllIn();
+        }
+        prevAllInActiveRef.current = gameState?.allInActive ?? false;
+    }, [gameState?.allInActive]);
+
+    // Sound effect: play winner sound
+    useEffect(() => {
+        if (gameState?.winnerMode && !prevWinnerModeRef.current) {
+            sounds.playWinner();
+        }
+        prevWinnerModeRef.current = gameState?.winnerMode ?? false;
+    }, [gameState?.winnerMode]);
+
+    // Visual transition on question change — increment key to force remount + animation
+    useEffect(() => {
+        if (!gameState) return;
+        const changed = gameState.activeArtistIndex !== prevArtistIndexRef.current
+            || gameState.activeTier !== prevTierRef.current;
+        if (changed) {
+            setTransitionKey(k => k + 1);
+        }
+        prevArtistIndexRef.current = gameState.activeArtistIndex;
+        prevTierRef.current = gameState.activeTier;
+    }, [gameState?.activeArtistIndex, gameState?.activeTier]);
+
+    // Timer display effect
+    useEffect(() => {
+        if (!gameState?.timerEndTime) {
+            setTimerRemaining(null);
+            setTimerExpired(false);
+            buzzerPlayedRef.current = false;
+            lastUrgentTickRef.current = -1;
+            return;
+        }
+
+        const interval = setInterval(() => {
+            const remainingMs = Math.max(0, gameState.timerEndTime! - Date.now());
+            setTimerRemaining(remainingMs);
+
+            // Play a tick each time the displayed whole-second number changes (≤10s)
+            const currentSecond = Math.ceil(remainingMs / 1000);
+            if (remainingMs > 0 && currentSecond <= 10 && currentSecond !== lastUrgentTickRef.current) {
+                lastUrgentTickRef.current = currentSecond;
+                sounds.playUrgentTick();
+            }
+
+            // Buzzer at 0
+            if (remainingMs === 0 && !buzzerPlayedRef.current) {
+                buzzerPlayedRef.current = true;
+                lastUrgentTickRef.current = -1;
+                sounds.playBuzzer();
+                setTimerExpired(true);
+            }
+        }, 100);
+
+        return () => clearInterval(interval);
+    }, [gameState?.timerEndTime]);
+
+    // Memoize particle configs
+    const theme = artist?.visual_theme;
+    const thematicParticles = useMemo(() => {
+        if (!theme) return null;
+        return getThematicParticles(theme);
+    }, [theme?.animation_type, theme?.primary_color, theme?.secondary_color]);
+
+    const ambientParticles = useMemo(() => ({
+        fullScreen: { enable: false },
+        fpsLimit: 60,
+        particles: {
+            number: { value: 30, density: { enable: true, area: 800 } },
+            color: { value: "#ffffff" },
+            shape: { type: "circle" },
+            opacity: {
+                value: { min: 0.1, max: 0.3 },
+                animation: { enable: true, speed: 0.5, sync: false }
+            },
+            size: {
+                value: { min: 1, max: 2 },
+                animation: { enable: true, speed: 1, sync: false }
+            },
+            move: {
+                enable: true,
+                speed: 0.1,
+                direction: "none" as const,
+                random: true,
+                straight: false,
+                outModes: { default: "out" as const }
+            }
+        },
+        detectRetina: false
+    }), [theme?.animation_type, theme?.primary_color, theme?.secondary_color]);
+
+    // Confetti particles for winner screen
+    const confettiParticles = useMemo(() => ({
+        fullScreen: { enable: false },
+        fpsLimit: 60,
+        particles: {
+            number: { value: 200 },
+            color: { value: ['#FFD700', '#FF4081', '#00E5FF', '#1db954', '#ff9800', '#9c27b0', '#ffffff'] },
+            shape: { type: ['circle', 'square'] },
+            opacity: { value: { min: 0.6, max: 1 } },
+            size: { value: { min: 3, max: 8 } },
+            move: {
+                enable: true, speed: { min: 2, max: 8 }, direction: 'bottom' as const,
+                random: true, straight: false,
+                outModes: { default: 'out' as const, top: 'none' as const },
+                gravity: { enable: true, acceleration: 3 }
+            },
+            rotate: { value: { min: 0, max: 360 }, animation: { enable: true, speed: 15, sync: false } },
+            tilt: { enable: true, direction: 'random' as const, value: { min: 0, max: 360 }, animation: { enable: true, speed: 30 } }
+        },
+        detectRetina: false
+    }), []);
 
     if (!gameState || !artist) {
         return (
@@ -150,190 +318,34 @@ const Presentation: React.FC = () => {
 
     const isUnlockPhase = gameState.activeTier === 0;
     const question = isUnlockPhase ? null : artist.lore_ladder[gameState.activeTier - 1];
-    const theme = artist.visual_theme;
 
     // Resolve font family from theme
-    const artistFont = FONT_MAP[theme.font_style] || "'Syncopate', sans-serif";
+    const artistFont = FONT_MAP[theme?.font_style ?? ''] || "'Syncopate', sans-serif";
 
-    const ambientParticles = {
-        fullScreen: { enable: false },
-        fpsLimit: 60,
-        particles: {
-            number: { value: 30, density: { enable: true, area: 800 } },
-            color: { value: "#ffffff" },
-            shape: { type: "circle" },
-            opacity: {
-                value: { min: 0.1, max: 0.3 },
-                animation: { enable: true, speed: 0.5, sync: false }
-            },
-            size: {
-                value: { min: 1, max: 2 },
-                animation: { enable: true, speed: 1, sync: false }
-            },
-            move: {
-                enable: true,
-                speed: 0.1,
-                direction: "none",
-                random: true,
-                straight: false,
-                outModes: { default: "out" }
-            }
-        },
-        detectRetina: false
-    };
+    const bgStyle = theme!.background_style || 'dark';
 
-    const getThematicParticles = (theme: any) => {
-        const type = theme.animation_type;
-        const color = theme.primary_color || '#00E5FF';
-        const secondary = theme.secondary_color || '#ffffff';
-        
-        const baseConfig: any = {
-            fullScreen: { enable: false },
-            fpsLimit: 60,
-            particles: {
-                color: { value: color },
-                move: { enable: true, speed: 1.5 },
-                number: { value: 30, density: { enable: true } },
-                opacity: { value: 0.4 },
-                size: { value: { min: 1, max: 3 } }
-            },
-            detectRetina: false
-        };
-
-        switch (type) {
-            case 'lightning':
-                return {
-                    ...baseConfig,
-                    particles: {
-                        ...baseConfig.particles,
-                        number: { value: 25 },
-                        color: { value: [color, secondary, '#ffffff'] },
-                        links: {
-                            enable: true,
-                            color: color,
-                            distance: 150,
-                            opacity: 0.4,
-                            width: 1,
-                            triangles: { enable: true, opacity: 0.05 }
-                        },
-                        move: { ...baseConfig.particles.move, speed: 4, outModes: "bounce" },
-                        size: { value: { min: 1, max: 3 } }
-                    }
-                };
-            case 'bubbles':
-                return {
-                    ...baseConfig,
-                    particles: {
-                        ...baseConfig.particles,
-                        color: { value: [color, secondary] },
-                        shape: { type: "circle" },
-                        number: { value: 20 },
-                        size: { value: { min: 8, max: 30 } },
-                        move: { ...baseConfig.particles.move, speed: 1, direction: "top", outModes: "out" },
-                        opacity: { value: { min: 0.05, max: 0.2 }, animation: { enable: true, speed: 0.5, minimumValue: 0.05 } },
-                        stroke: { width: 1, color: { value: color }, opacity: 0.2 }
-                    }
-                };
-            case 'neon_grid':
-                return {
-                    ...baseConfig,
-                    particles: {
-                        ...baseConfig.particles,
-                        shape: { type: "square" },
-                        number: { value: 30 },
-                        color: { value: [color, secondary] },
-                        links: { enable: true, color: color, distance: 200, opacity: 0.3, width: 1 },
-                        move: { ...baseConfig.particles.move, speed: 0.6, outModes: "out" },
-                        opacity: { value: 0.5 },
-                        size: { value: { min: 2, max: 4 } }
-                    }
-                };
-            case 'spotlight':
-                return {
-                    ...baseConfig,
-                    particles: {
-                        ...baseConfig.particles,
-                        number: { value: 5 },
-                        color: { value: [color, secondary, '#ffffff'] },
-                        size: { value: { min: 80, max: 200 } },
-                        opacity: { value: { min: 0.02, max: 0.1 }, animation: { enable: true, speed: 0.3, minimumValue: 0.02 } },
-                        move: { ...baseConfig.particles.move, speed: 0.2, direction: "random", outModes: "bounce" },
-                        shape: { type: "circle" }
-                    }
-                };
-            case 'equalizers':
-                return {
-                    ...baseConfig,
-                    particles: {
-                        ...baseConfig.particles,
-                        shape: { type: "square" },
-                        number: { value: 50 },
-                        color: { value: [color, secondary] },
-                        size: { value: { min: 2, max: 6 } },
-                        move: { 
-                            enable: true, 
-                            speed: { min: 1, max: 10 }, 
-                            direction: "top", 
-                            outModes: "out",
-                            random: false,
-                            straight: true
-                        },
-                        opacity: { value: { min: 0.2, max: 0.6 } }
-                    }
-                };
-            case 'floating_notes':
-                return {
-                    ...baseConfig,
-                    particles: {
-                        ...baseConfig.particles,
-                        number: { value: 15 },
-                        color: { value: [color, secondary, '#ffffff'] },
-                        shape: { 
-                            type: "char",
-                            options: {
-                                char: { value: ["♪", "♫", "♩", "♬", "♭", "♮"], font: "Verdana", weight: "400" }
-                            }
-                        },
-                        size: { value: { min: 12, max: 28 } },
-                        move: { ...baseConfig.particles.move, speed: 1.2, direction: "top-right", outModes: "out" },
-                        rotate: { value: { min: 0, max: 360 }, animation: { enable: true, speed: 3 } },
-                        opacity: { value: { min: 0.2, max: 0.5 } }
-                    }
-                };
-            case 'grunge_static':
-                return {
-                    ...baseConfig,
-                    particles: {
-                        ...baseConfig.particles,
-                        number: { value: 150 },
-                        color: { value: [color, '#ffffff', '#888888'] },
-                        shape: { type: "square" },
-                        size: { value: { min: 1, max: 2 } },
-                        move: { ...baseConfig.particles.move, speed: 15, direction: "none", random: true },
-                        opacity: { value: { min: 0.05, max: 0.4 }, animation: { enable: true, speed: 10 } }
-                    }
-                };
-            default:
-                return baseConfig;
-        }
-    };
-
-    const bgStyle = theme.background_style || 'dark';
+    // Timer rendering helpers
+    const timerSeconds = timerRemaining !== null ? Math.ceil(timerRemaining / 1000) : null;
+    const timerIsUrgent = timerSeconds !== null && timerSeconds <= 10 && timerSeconds > 0;
+    const timerProgress = gameState.timerEndTime && gameState.timerDuration
+        ? Math.max(0, Math.min(1, (timerRemaining ?? 0) / (gameState.timerDuration * 1000)))
+        : 0;
+    const circumference = 2 * Math.PI * 60; // radius = 60
 
     return (
         <div className={`presentation-container ${flash ? 'flash-active' : ''} bg-${bgStyle}`} style={{
-            '--primary-color': theme.primary_color,
-            '--secondary-color': theme.secondary_color,
-            '--primary-glow': `${theme.primary_color}88`,
+            '--primary-color': theme!.primary_color,
+            '--secondary-color': theme!.secondary_color,
+            '--primary-glow': `${theme!.primary_color}88`,
             '--artist-font': artistFont,
         } as React.CSSProperties}>
-            
+
             {/* Fanart Background Layer */}
             {artist.fanart_backgrounds && artist.fanart_backgrounds.length > 0 && gameState.activeTier > 0 ? (
                 <>
-                    <div 
+                    <div
                         className="bg-fanart-layer"
-                        style={{ 
+                        style={{
                             backgroundImage: `url(${artist.fanart_backgrounds[gameState.activeTier % artist.fanart_backgrounds.length]})`
                         }}
                     />
@@ -345,28 +357,30 @@ const Presentation: React.FC = () => {
             <div className="bg-vignette"></div>
             <div className="bg-noise"></div>
             <div className="bg-pattern"></div>
-            
+
             {init && (
                 <>
                     <Particles id="ambient-particles" options={ambientParticles as any} className="particle-layer" />
-                    <Particles id="theme-particles" options={getThematicParticles(theme) as any} className="particle-layer theme-layer" />
+                    {thematicParticles && (
+                        <Particles id="theme-particles" options={thematicParticles as any} className="particle-layer theme-layer" />
+                    )}
                 </>
             )}
 
-            <div className="main-content">
+            <div key={transitionKey} className="main-content question-transition">
                 {/* Jeopardy Board Overlay */}
                 {gameState.showBoard && (
                     <div className="board-overlay">
                         <div className="board-glass">
                             <h1 className="board-title">QUIZ PROGRESS BOARD</h1>
                             <div className="board-grid" style={{ gridTemplateColumns: `repeat(${gameState.quizData.length}, 1fr)` }}>
-                                {gameState.quizData.map((a: any, aIdx: number) => (
+                                {gameState.quizData.map((a: QuizArtist, aIdx: number) => (
                                     <div key={aIdx} className={`board-column ${aIdx === gameState.activeArtistIndex ? 'active-column' : ''}`}>
                                         {/* Header / Unlock Combined: Prevents spoiler and saves a row */}
                                         {(() => {
                                             const isUnlocked = aIdx < gameState.activeArtistIndex || (aIdx === gameState.activeArtistIndex && gameState.activeTier > 0);
                                             const isCurrentUnlock = aIdx === gameState.activeArtistIndex && gameState.activeTier === 0;
-                                            
+
                                             return (
                                                 <div className={`board-category ${isUnlocked ? 'completed' : (isCurrentUnlock ? 'active' : '')}`}>
                                                     {isUnlocked ? a.artist : (isCurrentUnlock ? '🔓 UNLOCK' : `???`)}
@@ -395,7 +409,7 @@ const Presentation: React.FC = () => {
                 <header className="presentation-header">
                     <div className="artist-info">
                         <div className="round-badge">ROUND {gameState.activeArtistIndex + 1}</div>
-                        
+
                         {isUnlockPhase ? (
                             <h1 className="artist-name">???</h1>
                         ) : artist.fanart_logo ? (
@@ -405,7 +419,7 @@ const Presentation: React.FC = () => {
                         ) : (
                             <h1 className="artist-name">{artist.artist}</h1>
                         )}
-                        
+
                         <p className="genre-tag">{artist.genre}</p>
                     </div>
 
@@ -463,13 +477,38 @@ const Presentation: React.FC = () => {
                 </div>
             </div>
 
+            {/* Timer Display */}
+            {gameState.timerEndTime && timerSeconds !== null && (
+                <div className={`timer-container ${timerIsUrgent ? 'timer-urgent' : ''}`}>
+                    <div className="timer-circle">
+                        <svg className="timer-svg" viewBox="0 0 140 140">
+                            <circle className="timer-bg" cx="70" cy="70" r="60" />
+                            <circle
+                                className="timer-progress"
+                                cx="70" cy="70" r="60"
+                                stroke={timerIsUrgent ? '#ff4444' : (theme!.primary_color || '#00E5FF')}
+                                strokeDasharray={circumference}
+                                strokeDashoffset={circumference * (1 - timerProgress)}
+                            />
+                        </svg>
+                        {timerExpired ? (
+                            <div className="timer-number timer-expired">TIME'S UP</div>
+                        ) : (
+                            <div className="timer-number" style={{ color: timerIsUrgent ? '#ff4444' : (theme!.primary_color || '#00E5FF') }}>
+                                {timerSeconds}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+
             {/* Live Scoreboard */}
-            {gameState.showLeaderboard && gameState.teams && gameState.teams.length > 0 && (
+            {gameState.showLeaderboard && sortedTeams.length > 0 && (
                 <aside className="scoreboard-sidebar">
                     <div className="scoreboard-glass">
                         <h3>LEADERBOARD</h3>
                         <div className="team-list">
-                            {[...gameState.teams].sort((a: any, b: any) => b.score - a.score).map((t: any, i: number) => (
+                            {sortedTeams.map((t, i: number) => (
                                 <div key={i} className={`team-row rank-${i+1} ${gameState.allInActive && t.allInUsed ? 'team-all-in' : ''}`}>
                                     <div className="team-rank">{i + 1}</div>
                                     <div className="team-name">
@@ -487,36 +526,69 @@ const Presentation: React.FC = () => {
             {/* Winner Screen overlay */}
             {gameState.winnerMode && (
                 <div className="winner-overlay">
+                    {/* Confetti */}
+                    {init && (
+                        <div className="confetti-layer">
+                            <Particles id="confetti-particles" options={confettiParticles as any} style={{ width: '100%', height: '100%' }} />
+                        </div>
+                    )}
+
                     <div className="winner-content">
                         <div className="trophy-icon">🏆</div>
                         <h1 className="winner-title">GRAND CHAMPIONS</h1>
-                        {gameState.teams && gameState.teams.length > 0 && (
-                            <div className="top-team">
-                                <h2 className="top-team-name">
-                                    {[...gameState.teams].sort((a: any, b: any) => b.score - a.score)[0]?.name}
-                                </h2>
-                                <div className="top-team-score">
-                                    {[...gameState.teams].sort((a: any, b: any) => b.score - a.score)[0]?.score} POINTS
+
+                        {/* Podium for top 3 */}
+                        {sortedTeams.length > 0 && (
+                            <div className="podium-container">
+                                {/* 2nd place (left) */}
+                                {sortedTeams.length > 1 && (
+                                    <div className="podium-place podium-2nd">
+                                        <div className="podium-name">{sortedTeams[1].name}</div>
+                                        <div className="podium-bar">
+                                            <div className="podium-rank">2nd</div>
+                                            <div className="podium-score"><AnimatedScore target={sortedTeams[1].score} /></div>
+                                        </div>
+                                    </div>
+                                )}
+                                {/* 1st place (center) */}
+                                <div className="podium-place podium-1st">
+                                    <div className="podium-name">{sortedTeams[0].name}</div>
+                                    <div className="podium-bar">
+                                        <div className="podium-rank">1st</div>
+                                        <div className="podium-score"><AnimatedScore target={sortedTeams[0].score} /></div>
+                                    </div>
                                 </div>
+                                {/* 3rd place (right) */}
+                                {sortedTeams.length > 2 && (
+                                    <div className="podium-place podium-3rd">
+                                        <div className="podium-name">{sortedTeams[2].name}</div>
+                                        <div className="podium-bar">
+                                            <div className="podium-rank">3rd</div>
+                                            <div className="podium-score"><AnimatedScore target={sortedTeams[2].score} /></div>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         )}
-                        
-                        <div className="final-standings-list" style={{ marginTop: '3rem', background: 'rgba(255,255,255,0.05)', padding: '2rem', borderRadius: '2rem' }}>
-                            <h3 style={{ opacity: 0.5, marginBottom: '2rem', letterSpacing: '2px' }}>FINAL STANDINGS</h3>
-                            <div className="standings-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '2rem' }}>
-                                {[...gameState.teams].sort((a: any, b: any) => b.score - a.score).map((t: any, i: number) => (
-                                    <div key={i} className="standing-item">
-                                        <div className="standing-rank" style={{ fontSize: '1.2rem', opacity: 0.4 }}>#{i+1}</div>
+
+                        {/* Remaining standings below podium */}
+                        {sortedTeams.length > 3 && (
+                            <div className="remaining-standings">
+                                {sortedTeams.slice(3).map((t, i) => (
+                                    <div key={i} className="remaining-item">
+                                        <div className="standing-rank" style={{ fontSize: '1.2rem', opacity: 0.4 }}>#{i + 4}</div>
                                         <div className="standing-name" style={{ fontSize: '1.8rem', fontWeight: 900 }}>{t.name}</div>
-                                        <div className="standing-score" style={{ fontSize: '2.5rem', fontWeight: 900, color: '#00E5FF' }}>{t.score}</div>
+                                        <div className="standing-score" style={{ fontSize: '2.5rem', fontWeight: 900, color: '#00E5FF' }}>
+                                            <AnimatedScore target={t.score} />
+                                        </div>
                                     </div>
                                 ))}
                             </div>
-                        </div>
+                        )}
                     </div>
                 </div>
             )}
-            
+
             <style>{`
                 @import url('https://fonts.googleapis.com/css2?family=${FONT_IMPORTS}&display=swap');
 
@@ -844,7 +916,7 @@ const Presentation: React.FC = () => {
                 }
 
                 .rank-1 { background: rgba(255, 215, 0, 0.1); border: 1px solid rgba(255, 215, 0, 0.2); }
-                
+
                 .team-rank {
                     width: 30px;
                     font-weight: 900;
@@ -1070,9 +1142,256 @@ const Presentation: React.FC = () => {
                     from { opacity: 0; }
                     to { opacity: 1; }
                 }
+
+                /* ---- Question Transition ---- */
+                .question-transition {
+                    animation: questionSwap 0.5s ease-out;
+                }
+
+                @keyframes questionSwap {
+                    0% { opacity: 0; transform: translateY(20px) scale(0.98); }
+                    100% { opacity: 1; transform: translateY(0) scale(1); }
+                }
+
+                /* ---- Timer ---- */
+
+                .timer-container {
+                    position: fixed;
+                    bottom: 3rem;
+                    left: 3rem;
+                    z-index: 50;
+                    width: 140px;
+                    height: 140px;
+                }
+                .timer-circle { position: relative; width: 100%; height: 100%; }
+                .timer-svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+                .timer-bg { fill: none; stroke: rgba(255,255,255,0.1); stroke-width: 4; }
+                .timer-progress { fill: none; stroke-width: 4; stroke-linecap: round; transition: stroke 0.3s; }
+                .timer-number {
+                    position: absolute; top: 50%; left: 50%;
+                    transform: translate(-50%, -50%);
+                    font-size: 3rem; font-weight: 900;
+                    font-family: 'Syncopate', sans-serif;
+                    text-shadow: 0 0 20px currentColor;
+                }
+                .timer-urgent .timer-number {
+                    color: #ff4444;
+                    animation: timerPulse 0.5s infinite;
+                }
+                .timer-urgent .timer-progress { stroke: #ff4444; }
+                .timer-expired {
+                    animation: timerExpired 0.3s ease-out forwards;
+                    color: #ff4444;
+                    font-size: 1.2rem;
+                    text-align: center;
+                    white-space: nowrap;
+                }
+                @keyframes timerPulse {
+                    0%, 100% { transform: translate(-50%, -50%) scale(1); }
+                    50% { transform: translate(-50%, -50%) scale(1.3); }
+                }
+                @keyframes timerExpired {
+                    from { transform: translate(-50%, -50%) scale(1.5); opacity: 1; }
+                    to { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+                }
+
+                /* ---- Confetti & Podium ---- */
+
+                .confetti-layer {
+                    position: fixed;
+                    top: 0; left: 0; width: 100%; height: 100%;
+                    z-index: 999;
+                    pointer-events: none;
+                }
+                .podium-container {
+                    display: flex;
+                    align-items: flex-end;
+                    justify-content: center;
+                    gap: 1rem;
+                    margin: 3rem 0;
+                    min-height: 300px;
+                }
+                .podium-place {
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    text-align: center;
+                    animation: podiumRise 0.8s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+                }
+                .podium-place:nth-child(1) { animation-delay: 0.3s; }
+                .podium-place:nth-child(2) { animation-delay: 0s; }
+                .podium-place:nth-child(3) { animation-delay: 0.6s; }
+                .podium-bar {
+                    width: 180px;
+                    border-radius: 12px 12px 0 0;
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: flex-end;
+                    padding: 1.5rem 1rem;
+                }
+                .podium-1st .podium-bar { height: 250px; background: linear-gradient(180deg, #FFD700, #b8860b); }
+                .podium-2nd .podium-bar { height: 180px; background: linear-gradient(180deg, #C0C0C0, #808080); }
+                .podium-3rd .podium-bar { height: 130px; background: linear-gradient(180deg, #CD7F32, #8B4513); }
+                .podium-rank { font-size: 3rem; font-weight: 900; margin-bottom: 0.5rem; }
+                .podium-name { font-size: 1.4rem; font-weight: 700; margin-bottom: 0.3rem; }
+                .podium-score { font-size: 2rem; font-weight: 900; }
+                @keyframes podiumRise {
+                    from { transform: translateY(100px); opacity: 0; }
+                    to { transform: translateY(0); opacity: 1; }
+                }
+                .remaining-standings {
+                    margin-top: 2rem;
+                    display: flex;
+                    gap: 2rem;
+                    justify-content: center;
+                    flex-wrap: wrap;
+                }
+                .remaining-item {
+                    text-align: center;
+                    padding: 1rem 2rem;
+                    background: rgba(255,255,255,0.05);
+                    border-radius: 12px;
+                }
             `}</style>
         </div>
     );
 };
+
+function getThematicParticles(theme: QuizArtist['visual_theme']) {
+    const type = theme.animation_type;
+    const color = theme.primary_color || '#00E5FF';
+    const secondary = theme.secondary_color || '#ffffff';
+
+    const baseConfig: any = {
+        fullScreen: { enable: false },
+        fpsLimit: 60,
+        particles: {
+            color: { value: color },
+            move: { enable: true, speed: 1.5 },
+            number: { value: 30, density: { enable: true } },
+            opacity: { value: 0.4 },
+            size: { value: { min: 1, max: 3 } }
+        },
+        detectRetina: false
+    };
+
+    switch (type) {
+        case 'lightning':
+            return {
+                ...baseConfig,
+                particles: {
+                    ...baseConfig.particles,
+                    number: { value: 25 },
+                    color: { value: [color, secondary, '#ffffff'] },
+                    links: {
+                        enable: true,
+                        color: color,
+                        distance: 150,
+                        opacity: 0.4,
+                        width: 1,
+                        triangles: { enable: true, opacity: 0.05 }
+                    },
+                    move: { ...baseConfig.particles.move, speed: 4, outModes: "bounce" },
+                    size: { value: { min: 1, max: 3 } }
+                }
+            };
+        case 'bubbles':
+            return {
+                ...baseConfig,
+                particles: {
+                    ...baseConfig.particles,
+                    color: { value: [color, secondary] },
+                    shape: { type: "circle" },
+                    number: { value: 20 },
+                    size: { value: { min: 8, max: 30 } },
+                    move: { ...baseConfig.particles.move, speed: 1, direction: "top", outModes: "out" },
+                    opacity: { value: { min: 0.05, max: 0.2 }, animation: { enable: true, speed: 0.5, minimumValue: 0.05 } },
+                    stroke: { width: 1, color: { value: color }, opacity: 0.2 }
+                }
+            };
+        case 'neon_grid':
+            return {
+                ...baseConfig,
+                particles: {
+                    ...baseConfig.particles,
+                    shape: { type: "square" },
+                    number: { value: 30 },
+                    color: { value: [color, secondary] },
+                    links: { enable: true, color: color, distance: 200, opacity: 0.3, width: 1 },
+                    move: { ...baseConfig.particles.move, speed: 0.6, outModes: "out" },
+                    opacity: { value: 0.5 },
+                    size: { value: { min: 2, max: 4 } }
+                }
+            };
+        case 'spotlight':
+            return {
+                ...baseConfig,
+                particles: {
+                    ...baseConfig.particles,
+                    number: { value: 5 },
+                    color: { value: [color, secondary, '#ffffff'] },
+                    size: { value: { min: 80, max: 200 } },
+                    opacity: { value: { min: 0.02, max: 0.1 }, animation: { enable: true, speed: 0.3, minimumValue: 0.02 } },
+                    move: { ...baseConfig.particles.move, speed: 0.2, direction: "random", outModes: "bounce" },
+                    shape: { type: "circle" }
+                }
+            };
+        case 'equalizers':
+            return {
+                ...baseConfig,
+                particles: {
+                    ...baseConfig.particles,
+                    shape: { type: "square" },
+                    number: { value: 50 },
+                    color: { value: [color, secondary] },
+                    size: { value: { min: 2, max: 6 } },
+                    move: {
+                        enable: true,
+                        speed: { min: 1, max: 10 },
+                        direction: "top",
+                        outModes: "out",
+                        random: false,
+                        straight: true
+                    },
+                    opacity: { value: { min: 0.2, max: 0.6 } }
+                }
+            };
+        case 'floating_notes':
+            return {
+                ...baseConfig,
+                particles: {
+                    ...baseConfig.particles,
+                    number: { value: 15 },
+                    color: { value: [color, secondary, '#ffffff'] },
+                    shape: {
+                        type: "char",
+                        options: {
+                            char: { value: ["♪", "♫", "♩", "♬", "♭", "♮"], font: "Verdana", weight: "400" }
+                        }
+                    },
+                    size: { value: { min: 12, max: 28 } },
+                    move: { ...baseConfig.particles.move, speed: 1.2, direction: "top-right", outModes: "out" },
+                    rotate: { value: { min: 0, max: 360 }, animation: { enable: true, speed: 3 } },
+                    opacity: { value: { min: 0.2, max: 0.5 } }
+                }
+            };
+        case 'grunge_static':
+            return {
+                ...baseConfig,
+                particles: {
+                    ...baseConfig.particles,
+                    number: { value: 150 },
+                    color: { value: [color, '#ffffff', '#888888'] },
+                    shape: { type: "square" },
+                    size: { value: { min: 1, max: 2 } },
+                    move: { ...baseConfig.particles.move, speed: 15, direction: "none", random: true },
+                    opacity: { value: { min: 0.05, max: 0.4 }, animation: { enable: true, speed: 10 } }
+                }
+            };
+        default:
+            return baseConfig;
+    }
+}
 
 export default Presentation;

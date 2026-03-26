@@ -1,54 +1,48 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import type { QuizArtist } from '../services/gemini';
-import { calculatePoints, getNextState, getPrevState, type GameState } from '../utils/gameLogic';
+import { calculatePoints, getNextState, getPrevState, INITIAL_GAME_STATE, type GameState } from '../utils/gameLogic';
+import type { SavedQuiz, AppConfig } from '../types/electron';
+import QRCode from 'qrcode';
+import { v4 as uuidv4 } from 'uuid';
 import './Dashboard.css';
 
-// @ts-ignore
-import { v4 as uuidv4 } from 'uuid';
-
 const getApi = () => {
-    // @ts-ignore
     if (window.electronAPI) return window.electronAPI;
     return {
         broadcastState: () => { },
         startRemoteServer: async () => 'localhost',
-        updateRemoteGuid: async () => { },
+        updateRemoteGuid: async () => true,
         openSpotify: () => alert('Spotify Desktop trigger mocked for Web Layer'),
         openPresentationWindow: () => window.open('/#/presentation', '_blank', 'width=1280,height=720'),
-        getQuizzes: async () => [],
-        deleteQuiz: async () => true
+        getQuizzes: async () => [] as SavedQuiz[],
+        deleteQuiz: async () => true,
+        getConfig: async () => ({ geminiKey: '', geminiModel: '', spotifyClientId: '', spotifyClientSecret: '', fanartPersonalApiKey: '', spotifyMobileMode: 'desktop' }) as AppConfig,
+        setConfig: async () => true,
+        saveQuiz: async () => true,
+        fetchMbid: async () => null,
+        fetchFanart: async () => null,
+        onStateUpdate: () => {},
     };
 };
 
 const Dashboard: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
-    const [savedQuizzes, setSavedQuizzes] = useState<any[]>([]);
+    const [savedQuizzes, setSavedQuizzes] = useState<SavedQuiz[]>([]);
     const [answerPeeked, setAnswerPeeked] = useState(false);
     const [newTeamName, setNewTeamName] = useState('');
     const [showWagerModal, setShowWagerModal] = useState(false);
     const [remoteGuid, setRemoteGuid] = useState(uuidv4());
+    const [qrDataUrl, setQrDataUrl] = useState('');
 
-    const [gameState, setGameState] = useState<GameState>({
-        activeArtistIndex: 0,
-        activeTier: 0,
-        showAnswer: false,
-        showBoard: false,
-        showLeaderboard: true,
-        quizData: [],
-        allInActive: false,
-        winnerMode: false,
-        teams: [],
-        wagersLocked: false,
-        spotifyMobileMode: 'desktop'
-    });
+    const [gameState, setGameState] = useState<GameState>(INITIAL_GAME_STATE);
     const [remoteIp, setRemoteIp] = useState('');
+    const quizDataRef = useRef<QuizArtist[]>([]);
 
     useEffect(() => {
         getApi().getQuizzes().then(setSavedQuizzes);
-        getApi().getConfig().then((cfg: any) => {
+        getApi().getConfig().then((cfg: AppConfig) => {
             if (cfg?.spotifyMobileMode) {
                 setGameState(prev => {
-                    const newState = { ...prev, spotifyMobileMode: cfg.spotifyMobileMode };
-                    // If we are already hosting, sync the mode to the remote immediately
+                    const newState = { ...prev, spotifyMobileMode: cfg.spotifyMobileMode as GameState['spotifyMobileMode'] };
                     if (newState.quizData.length > 0) {
                         getApi().broadcastState(newState);
                     }
@@ -57,12 +51,26 @@ const Dashboard: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
             }
         });
 
-        // Listen for external state updates (from mobile remote or other sources)
-        getApi().onStateUpdate?.((newState: any) => {
-            setGameState(newState);
+        getApi().onStateUpdate?.((newState: GameState) => {
+            if (newState.quizData && newState.quizData.length > 0) {
+                quizDataRef.current = newState.quizData;
+            }
+            setGameState({
+                ...newState,
+                quizData: (newState.quizData && newState.quizData.length > 0) ? newState.quizData : quizDataRef.current,
+            });
             setAnswerPeeked(false);
         });
     }, []);
+
+    // Generate QR code locally whenever remoteIp or remoteGuid changes
+    useEffect(() => {
+        if (!remoteIp) return;
+        const url = `http://${remoteIp}:3001?auth=${remoteGuid}`;
+        QRCode.toDataURL(url, { width: 150, margin: 1, color: { dark: '#000000', light: '#ffffff' } })
+            .then(setQrDataUrl)
+            .catch(console.error);
+    }, [remoteIp, remoteGuid]);
 
     // GUID Rotation logic
     useEffect(() => {
@@ -71,11 +79,10 @@ const Dashboard: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
             const newGuid = uuidv4();
             setRemoteGuid(newGuid);
             getApi().updateRemoteGuid(newGuid);
-            // Re-broadcast so main process has fresh state for new connections under this GUID
             if (gameState.quizData.length > 0) {
                 getApi().broadcastState(gameState);
             }
-        }, 60000); // Update every minute
+        }, 60000);
         return () => clearInterval(interval);
     }, [remoteIp, gameState]);
 
@@ -83,11 +90,10 @@ const Dashboard: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
     useEffect(() => {
         if (isActive) {
             getApi().getQuizzes().then(setSavedQuizzes);
-            getApi().getConfig().then((cfg: any) => {
+            getApi().getConfig().then((cfg: AppConfig) => {
                 if (cfg?.spotifyMobileMode) {
                     setGameState(prev => {
-                        const newState = { ...prev, spotifyMobileMode: cfg.spotifyMobileMode };
-                        // If we are already hosting, sync the mode to the remote immediately
+                        const newState = { ...prev, spotifyMobileMode: cfg.spotifyMobileMode as GameState['spotifyMobileMode'] };
                         if (newState.quizData.length > 0) {
                             getApi().broadcastState(newState);
                         }
@@ -98,32 +104,33 @@ const Dashboard: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
         }
     }, [isActive]);
 
-    const broadcast = (newState: GameState) => {
+    const broadcast = useCallback((newState: GameState) => {
         setGameState(newState);
-        getApi().broadcastState(newState);
-    };
+        // Only include quizData in broadcast when it actually changed
+        if (newState.quizData !== quizDataRef.current) {
+            quizDataRef.current = newState.quizData;
+            getApi().broadcastState(newState);
+        } else {
+            const { quizData: _qd, ...dynamicState } = newState;
+            getApi().broadcastState(dynamicState as GameState);
+        }
+    }, []);
 
     const hostQuiz = async (quizData: QuizArtist[]) => {
         const cfg = await getApi().getConfig();
-        broadcast({ 
-            ...gameState, 
-            quizData, 
-            activeArtistIndex: 0, 
-            activeTier: 0, 
-            showAnswer: false, 
-            showBoard: false, 
-            showLeaderboard: true, 
-            allInActive: false, 
-            winnerMode: false, 
-            wagersLocked: false,
-            spotifyMobileMode: cfg?.spotifyMobileMode || 'desktop'
+        broadcast({
+            ...INITIAL_GAME_STATE,
+            quizData,
+            teams: gameState.teams,
+            timerDuration: gameState.timerDuration,
+            timerAutoStart: gameState.timerAutoStart,
+            spotifyMobileMode: (cfg?.spotifyMobileMode || 'desktop') as GameState['spotifyMobileMode'],
         });
     };
 
     const handleStartRemote = async () => {
         const ip = await getApi().startRemoteServer(remoteGuid);
         setRemoteIp(ip);
-        // Force a broadcast so the main process knows the current state for any immediate connections
         if (gameState.quizData.length > 0) {
             getApi().broadcastState(gameState);
         }
@@ -137,7 +144,6 @@ const Dashboard: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
 
     const addPointsToTeam = (idx: number, pts: number, isWager = false) => {
         const teams = [...gameState.teams];
-        // If it's a wager, ignore All-In status (pass false)
         const added = calculatePoints(isWager ? false : gameState.allInActive, pts);
         teams[idx] = { ...teams[idx], score: teams[idx].score + added };
         broadcast({ ...gameState, teams });
@@ -145,8 +151,8 @@ const Dashboard: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
 
     const toggleTeamAllIn = (idx: number) => {
         const teams = [...gameState.teams];
-        if (teams[idx].allInUsed && !gameState.allInActive) return; 
-        
+        if (teams[idx].allInUsed && !gameState.allInActive) return;
+
         if (!gameState.allInActive) {
             teams[idx] = { ...teams[idx], allInUsed: true };
             broadcast({ ...gameState, teams, allInActive: true });
@@ -155,37 +161,91 @@ const Dashboard: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
         }
     };
 
-    const toggleBoard = () => {
-        broadcast({ ...gameState, showBoard: !gameState.showBoard });
-    };
+    const toggleBoard = () => broadcast({ ...gameState, showBoard: !gameState.showBoard });
+    const toggleLeaderboard = () => broadcast({ ...gameState, showLeaderboard: !gameState.showLeaderboard });
 
-    const toggleLeaderboard = () => {
-        broadcast({ ...gameState, showLeaderboard: !gameState.showLeaderboard });
-    };
-
-    const handleNext = () => {
+    const handleNext = useCallback(() => {
         setAnswerPeeked(false);
-        const next = getNextState(gameState);
-        // If the current state is the last question and next is winnerMode, 
-        // we allow getNextState to handle it, but we can add a confirmation if needed.
-        broadcast(next);
-    };
+        broadcast(getNextState(gameState));
+    }, [gameState, broadcast]);
 
-    const handlePrev = () => {
+    const handlePrev = useCallback(() => {
         setAnswerPeeked(false);
-        // If we are in winner mode, go back to the last question
         if (gameState.winnerMode) {
             broadcast({ ...gameState, winnerMode: false });
             return;
         }
         broadcast(getPrevState(gameState));
-    };
+    }, [gameState, broadcast]);
+
+    const handleReveal = useCallback(() => {
+        broadcast({ ...gameState, showAnswer: true });
+    }, [gameState, broadcast]);
 
     const handleStopHosting = () => {
         if (window.confirm('Are you sure you want to stop hosting? Current progress will be lost.')) {
             broadcast({ ...gameState, quizData: [] });
         }
     };
+
+    const handleDeleteQuiz = async (quizId: number) => {
+        if (!window.confirm('Are you sure you want to delete this quiz? This cannot be undone.')) return;
+        if (await getApi().deleteQuiz(quizId)) {
+            setSavedQuizzes(prev => prev.filter(sq => sq.id !== quizId));
+        }
+    };
+
+    const handleTimerToggle = () => {
+        if (gameState.timerEndTime) {
+            broadcast({ ...gameState, timerEndTime: null });
+        } else {
+            broadcast({ ...gameState, timerEndTime: Date.now() + gameState.timerDuration * 1000 });
+        }
+    };
+
+    // Keyboard shortcuts
+    useEffect(() => {
+        if (!gameState.quizData.length) return;
+
+        const handleKeyDown = (e: KeyboardEvent) => {
+            // Don't trigger shortcuts when typing in inputs
+            const tag = (e.target as HTMLElement).tagName;
+            if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+
+            switch (e.key) {
+                case 'ArrowRight':
+                    e.preventDefault();
+                    handleNext();
+                    break;
+                case 'ArrowLeft':
+                    e.preventDefault();
+                    handlePrev();
+                    break;
+                case ' ':
+                    e.preventDefault();
+                    if (!gameState.showAnswer) handleReveal();
+                    break;
+                case 'b':
+                case 'B':
+                    e.preventDefault();
+                    toggleBoard();
+                    break;
+                case 'l':
+                case 'L':
+                    e.preventDefault();
+                    toggleLeaderboard();
+                    break;
+                case 't':
+                case 'T':
+                    e.preventDefault();
+                    handleTimerToggle();
+                    break;
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [gameState, handleNext, handlePrev, handleReveal]);
 
     const currentPoints = gameState.activeTier === 0 ? 10 : (gameState.quizData[gameState.activeArtistIndex]?.lore_ladder?.[gameState.activeTier - 1]?.points || 10);
     const isFinalQuestion = gameState.activeArtistIndex === gameState.quizData.length - 1 && gameState.activeTier === 5;
@@ -197,7 +257,7 @@ const Dashboard: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
                 <div className="dashboard-header">
                     <h1>🎮 Quizmaster Dashboard</h1>
                     <div className="dashboard-header-actions">
-                        {gameState.quizData.length > 0 && <button className="btn-md btn-danger" style={{ marginRight: '1rem' }} onClick={handleStopHosting}>Stop Hosting</button>}
+                        {gameState.quizData.length > 0 && <button className="btn-md btn-danger btn-danger-hosting" onClick={handleStopHosting}>Stop Hosting</button>}
                         <button className="btn-md btn-accent" onClick={() => getApi().openPresentationWindow()}>Open Presentation Screen</button>
                     </div>
                 </div>
@@ -218,11 +278,7 @@ const Dashboard: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
                                         <h3>{q.name}</h3>
                                         <p className="quiz-meta">{q.data.length} Artists included.</p>
                                         <button className="btn-lg btn-primary" onClick={() => hostQuiz(q.data)}>Host This Quiz 🚀</button>
-                                        <button className="btn-danger" style={{ width: '100%', marginTop: '0.75rem' }} onClick={async () => {
-                                            if (await getApi().deleteQuiz(q.id)) {
-                                                setSavedQuizzes(savedQuizzes.filter(sq => sq.id !== q.id));
-                                            }
-                                        }}>Delete</button>
+                                        <button className="btn-danger btn-danger-delete" onClick={() => handleDeleteQuiz(q.id)}>Delete</button>
                                     </div>
                                 ))}
                             </div>
@@ -252,10 +308,10 @@ const Dashboard: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
                             <div className="control-panel">
                                 {remoteIp ? (
                                     <div className="remote-panel">
-                                        <img src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(`http://${remoteIp}:3001?auth=${remoteGuid}`)}`} alt="QR Code" />
+                                        {qrDataUrl && <img src={qrDataUrl} alt="QR Code" />}
                                         <div className="remote-info">
                                             <p className="status">✅ Remote Server Running!</p>
-                                            <p className="url" style={{ fontSize: '0.8rem', opacity: 0.7 }}>Key refreshes every minute for security.</p>
+                                            <p className="url">Key refreshes every minute for security.</p>
                                         </div>
                                     </div>
                                 ) : (
@@ -267,16 +323,16 @@ const Dashboard: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
                             <div className="control-panel">
                                 <div className="flow-buttons">
                                     <button className="btn-md btn-nav" onClick={handlePrev} disabled={gameState.activeArtistIndex === 0 && gameState.activeTier === 0}>⬅ Previous</button>
-                                    <button className="btn-md btn-primary" onClick={handleNext} style={{ background: isLastStepBeforeFinish ? '#1db954' : '' }}>
+                                    <button className={`btn-md btn-primary ${isLastStepBeforeFinish ? 'btn-finish' : ''}`} onClick={handleNext}>
                                         {isLastStepBeforeFinish ? '🏁 Finish Quiz' : 'Next ➡'}
                                     </button>
                                 </div>
 
                                 <div className="action-buttons">
                                     <div className="action-row">
-                                        <button 
-                                            className="btn-md btn-reveal" 
-                                            onClick={() => broadcast({ ...gameState, showAnswer: true })}
+                                        <button
+                                            className="btn-md btn-reveal"
+                                            onClick={handleReveal}
                                             disabled={gameState.showAnswer}
                                         >
                                             👁 Reveal Answer
@@ -291,6 +347,42 @@ const Dashboard: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
                                         </button>
                                     )}
                                 </div>
+
+                                {/* Timer Controls */}
+                                <div className="timer-controls">
+                                    <div className="timer-row">
+                                        <label className="timer-label">Timer</label>
+                                        <input
+                                            type="number"
+                                            className="timer-input"
+                                            value={gameState.timerDuration}
+                                            min={5}
+                                            max={120}
+                                            onChange={e => setGameState(prev => ({ ...prev, timerDuration: parseInt(e.target.value) || 30 }))}
+                                        />
+                                        <span className="timer-unit">sec</span>
+                                        <label className="timer-auto-label">
+                                            <input
+                                                type="checkbox"
+                                                checked={gameState.timerAutoStart}
+                                                onChange={e => broadcast({ ...gameState, timerAutoStart: e.target.checked })}
+                                            />
+                                            Auto
+                                        </label>
+                                        <button className={`btn-sm ${gameState.timerEndTime ? 'btn-timer-stop' : 'btn-timer-start'}`} onClick={handleTimerToggle}>
+                                            {gameState.timerEndTime ? '⏹ Stop' : '⏱ Start'}
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div className="keyboard-hints">
+                                    <span>Shortcuts:</span>
+                                    <kbd>Space</kbd> Reveal
+                                    <kbd>←</kbd><kbd>→</kbd> Nav
+                                    <kbd>B</kbd> Board
+                                    <kbd>L</kbd> Scores
+                                    <kbd>T</kbd> Timer
+                                </div>
                             </div>
 
                             {/* Team Scoreboard */}
@@ -298,7 +390,7 @@ const Dashboard: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
                                 <>
                                     <div className="scoreboard-heading">
                                         <h2>Scoreboard & Points</h2>
-                                        <button className="btn-sm" style={{ background: gameState.showLeaderboard ? '#dc3545' : '#1db954' }} onClick={toggleLeaderboard}>
+                                        <button className={`btn-sm ${gameState.showLeaderboard ? 'btn-leaderboard-hide' : 'btn-leaderboard-show'}`} onClick={toggleLeaderboard}>
                                             {gameState.showLeaderboard ? '🙈 Hide Screen Leaderboard' : '👁 Show Screen Leaderboard'}
                                         </button>
                                     </div>
@@ -311,17 +403,21 @@ const Dashboard: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
                                                     {isFinalQuestion && t.wager !== undefined && <span className="wager-label">(Wagered: {t.wager})</span>}
                                                 </div>
                                                 <div className="point-buttons">
-                                                    <button className="btn-sm" style={{ background: '#dc3545' }} onClick={() => addPointsToTeam(i, -currentPoints)}>-{currentPoints}</button>
-                                                    <button className="btn-sm" style={{ background: '#ff4444' }} onClick={() => addPointsToTeam(i, -5)}>-5</button>
-                                                    <button className="btn-sm" style={{ background: '#28a745' }} onClick={() => addPointsToTeam(i, 5)}>+5</button>
-                                                    <button className="btn-sm" style={{ background: '#1db954' }} onClick={() => addPointsToTeam(i, currentPoints)}>+{currentPoints}</button>
+                                                    <button className="btn-sm btn-pts-neg" onClick={() => addPointsToTeam(i, -currentPoints)}>-{currentPoints}</button>
+                                                    <button className="btn-sm btn-pts-neg-sm" onClick={() => addPointsToTeam(i, -5)}>-5</button>
+                                                    <button className="btn-sm btn-pts-pos-sm" onClick={() => addPointsToTeam(i, 5)}>+5</button>
+                                                    <button className="btn-sm btn-pts-pos" onClick={() => addPointsToTeam(i, currentPoints)}>+{currentPoints}</button>
                                                     {isFinalQuestion && t.wager !== undefined && (
                                                         <>
-                                                            <button className="btn-sm" style={{ background: '#1db954' }} onClick={() => addPointsToTeam(i, t.wager || 0, true)}>+Wager</button>
-                                                            <button className="btn-sm" style={{ background: '#dc3545' }} onClick={() => addPointsToTeam(i, -(t.wager || 0), true)}>-Wager</button>
+                                                            <button className="btn-sm btn-pts-pos" onClick={() => addPointsToTeam(i, t.wager || 0, true)}>+Wager</button>
+                                                            <button className="btn-sm btn-pts-neg" onClick={() => addPointsToTeam(i, -(t.wager || 0), true)}>-Wager</button>
                                                         </>
                                                     )}
-                                                    <button className="btn-sm" onClick={() => toggleTeamAllIn(i)} disabled={(t.allInUsed && !gameState.allInActive) || isFinalQuestion} style={{ background: t.allInUsed ? (gameState.allInActive ? '#ff4444' : '#555') : (isFinalQuestion ? '#555' : '#ffc107'), color: t.allInUsed && gameState.allInActive ? '#fff' : '#000' }}>
+                                                    <button
+                                                        className={`btn-sm ${t.allInUsed ? (gameState.allInActive ? 'btn-allin-active' : 'btn-allin-used') : (isFinalQuestion ? 'btn-allin-used' : 'btn-allin')}`}
+                                                        onClick={() => toggleTeamAllIn(i)}
+                                                        disabled={(t.allInUsed && !gameState.allInActive) || isFinalQuestion}
+                                                    >
                                                         {gameState.allInActive && t.allInUsed ? 'Deactivate' : (t.allInUsed ? '🔒 Used' : '🔥 All-In')}
                                                     </button>
                                                 </div>
@@ -345,14 +441,14 @@ const Dashboard: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
 
                                 {gameState.winnerMode ? (
                                     <div className="prompt-card winner">
-                                        <h2 style={{ color: '#FFD700', textAlign: 'center' }}>🏆 QUIZ COMPLETE!</h2>
-                                        <p style={{ textAlign: 'center' }}>Final scores are shown on the presentation screen.</p>
+                                        <h2 className="winner-prompt-title">🏆 QUIZ COMPLETE!</h2>
+                                        <p className="winner-prompt-text">Final scores are shown on the presentation screen.</p>
                                         <button className="btn-lg" onClick={() => broadcast({ ...gameState, quizData: [] })}>Exit to Menu</button>
                                     </div>
                                 ) : (() => {
                                     const artist = gameState.quizData[gameState.activeArtistIndex];
                                     if (!artist) return null;
-                                    
+
                                     if (gameState.activeTier === 0) {
                                         return (
                                             <>
@@ -370,11 +466,10 @@ const Dashboard: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
                                                     )}
                                                 </div>
 
-                                                <button 
-                                                    className="btn-lg btn-success" 
+                                                <button
+                                                    className={`btn-lg btn-success ${!artist.unlock_song_uri ? 'btn-spotify-disabled' : ''}`}
                                                     onClick={() => getApi().openSpotify(artist.unlock_song_uri || '')}
                                                     disabled={!artist.unlock_song_uri}
-                                                    style={{ opacity: !artist.unlock_song_uri ? 0.5 : 1 }}
                                                 >
                                                     {artist.unlock_song_uri ? '🎵 Play Unlock Song (Spotify)' : '❌ No Spotify Link Found'}
                                                 </button>
@@ -386,8 +481,8 @@ const Dashboard: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
                                     return (
                                         <>
                                             <div className="prompt-card question">
-                                                <p className="prompt-label" style={{ textTransform: 'uppercase' }}>Read Aloud ({currentQ.target}):</p>
-                                                <p className="prompt-text" style={{ fontWeight: 400 }}>{currentQ.spoken_hint}</p>
+                                                <p className="prompt-label prompt-label-upper">Read Aloud ({currentQ.target}):</p>
+                                                <p className="prompt-text prompt-text-light">{currentQ.spoken_hint}</p>
                                             </div>
 
                                             <div className="prompt-card answer" onClick={() => setAnswerPeeked(!answerPeeked)}>
@@ -396,11 +491,10 @@ const Dashboard: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
                                                 <p className="prompt-meta">Base Value: {currentQ.points} pts</p>
                                             </div>
 
-                                            <button 
-                                                className="btn-lg btn-success" 
+                                            <button
+                                                className={`btn-lg btn-success ${!currentQ.audio_hint_uri ? 'btn-spotify-disabled' : ''}`}
                                                 onClick={() => getApi().openSpotify(currentQ.audio_hint_uri || '')}
                                                 disabled={!currentQ.audio_hint_uri}
-                                                style={{ opacity: !currentQ.audio_hint_uri ? 0.5 : 1 }}
                                             >
                                                 {currentQ.audio_hint_uri ? '🎵 Play Audio Hint (Spotify)' : '❌ No Spotify Link Found'}
                                             </button>
@@ -417,19 +511,19 @@ const Dashboard: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
                     <div className="modal-overlay">
                         <div className="glass-panel modal-content">
                             <h2>Final Wager Entry</h2>
-                            <p style={{ marginBottom: '1.5rem', fontSize: '0.9rem' }}>Teams can wager up to their current total score.</p>
+                            <p className="wager-description">Teams can wager up to their current total score.</p>
                             {gameState.teams.map((t, i) => (
-                                <div key={i} style={{ marginBottom: '1rem' }}>
-                                    <label style={{ display: 'block', marginBottom: '0.3rem' }}>{t.name} (Max: {t.score})</label>
-                                    <input 
-                                        type="number" 
-                                        value={t.wager || 0} 
+                                <div key={i} className="wager-entry">
+                                    <label className="wager-label">{t.name} (Max: {t.score})</label>
+                                    <input
+                                        type="number"
+                                        value={t.wager || 0}
                                         onChange={e => {
                                             const teams = [...gameState.teams];
                                             const val = Math.min(t.score, Math.max(0, parseInt(e.target.value) || 0));
-                                            teams[i].wager = val;
+                                            teams[i] = { ...teams[i], wager: val };
                                             broadcast({ ...gameState, teams });
-                                        }} 
+                                        }}
                                     />
                                 </div>
                             ))}

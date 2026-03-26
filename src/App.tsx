@@ -4,10 +4,10 @@ import Setup from './views/Setup';
 import Builder from './views/Builder';
 import Dashboard from './views/Dashboard';
 import Presentation from './views/Presentation';
+import ErrorBoundary from './components/ErrorBoundary';
 
-// @ts-ignore
-const getApi = () => window.electronAPI || { 
-    getConfig: async () => ({ geminiKey: '', spotifyClientId: '' }),
+const getApi = () => window.electronAPI || {
+    getConfig: async () => ({ geminiKey: '', geminiModel: '', spotifyClientId: '', spotifyClientSecret: '', fanartPersonalApiKey: '', spotifyMobileMode: 'desktop' }),
     getQuizzes: async () => [],
 };
 
@@ -40,20 +40,20 @@ const MainLayout: React.FC = () => {
     return (
         <div className="app-container">
             <nav className="tab-bar">
-                <button 
-                    className={`tab-btn ${activeTab === 'config' ? 'active' : ''}`} 
+                <button
+                    className={`tab-btn ${activeTab === 'config' ? 'active' : ''}`}
                     onClick={() => setActiveTab('config')}
                 >
                     🔐 Config
                 </button>
-                <button 
-                    className={`tab-btn ${activeTab === 'builder' ? 'active' : ''}`} 
+                <button
+                    className={`tab-btn ${activeTab === 'builder' ? 'active' : ''}`}
                     onClick={() => setActiveTab('builder')}
                 >
                     🎨 Quiz Builder
                 </button>
-                <button 
-                    className={`tab-btn ${activeTab === 'dashboard' ? 'active' : ''}`} 
+                <button
+                    className={`tab-btn ${activeTab === 'dashboard' ? 'active' : ''}`}
                     onClick={() => setActiveTab('dashboard')}
                 >
                     🎮 Dashboard
@@ -127,12 +127,14 @@ const MainLayout: React.FC = () => {
 
 function App() {
   return (
-    <Router>
-      <Routes>
-        <Route path="/" element={<MainLayout />} />
-        <Route path="/presentation" element={<Presentation />} />
-      </Routes>
-    </Router>
+    <ErrorBoundary>
+      <Router>
+        <Routes>
+          <Route path="/" element={<MainLayout />} />
+          <Route path="/presentation" element={<Presentation />} />
+        </Routes>
+      </Router>
+    </ErrorBoundary>
   );
 }
 

@@ -3,13 +3,12 @@ import { listModels } from '../services/gemini';
 
 // Safely access electron API or provide a stub for web browser testing
 const getApi = () => {
-    // @ts-ignore
     if (window.electronAPI) return window.electronAPI;
     console.warn("electronAPI not found. Running in Web Browser Fallback Mode.");
     return {
-        getConfig: async () => ({ geminiKey: '', geminiModel: '', spotifyClientId: '', spotifyClientSecret: '', fanartPersonalApiKey: '' }),
+        getConfig: async () => ({ geminiKey: '', geminiModel: '', spotifyClientId: '', spotifyClientSecret: '', fanartPersonalApiKey: '', spotifyMobileMode: 'desktop' }),
         setConfig: async () => true
-    };
+    } as unknown as typeof window.electronAPI;
 };
 
 const Setup: React.FC = () => {

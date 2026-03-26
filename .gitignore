@@ -34,3 +34,6 @@ Thumbs.db
 config.json
 quizzes/
 src/services/mock_data.json
+
+#AI Agent folders
+.claude/
