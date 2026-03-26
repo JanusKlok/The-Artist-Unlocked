@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { generateArtistTrivia } from '../services/gemini';
+import { buildTriviaPrompt, validateQuizData } from '../services/gemini';
 import type { QuizArtist } from '../services/gemini';
 import { searchTracks, type SpotifyTrack } from '../services/spotify';
+import { AI_PROVIDERS, PROVIDER_LABELS, type AiProvider } from '../types/ai';
 
 const DIFFICULTY_MAP: Record<string, string> = {
     Casual: `Focus on mainstream, widely known facts. The "unlock_song" should be a well-known radio hit. The lore ladder should cover famous stuff. Even Tier 5 should be guessable by a general fan.`,
@@ -15,12 +16,17 @@ const FONT_STYLES = ['heavy', 'elegant', 'grunge', 'retro'];
 const BACKGROUND_STYLES = ['dark', 'gradient', 'smoky', 'grid-overlay'];
 
 const getApi = () => window.electronAPI || {
-    getConfig: async () => ({ geminiKey: '', geminiModel: '', spotifyClientId: '', spotifyClientSecret: '', fanartPersonalApiKey: '', spotifyMobileMode: 'desktop' }),
+    getConfig: async () => ({
+        geminiKey: '', geminiModel: '', spotifyClientId: '', spotifyClientSecret: '',
+        fanartPersonalApiKey: '', spotifyMobileMode: 'desktop',
+        openaiKey: '', openaiModel: '', anthropicKey: '', anthropicModel: '',
+        groqKey: '', groqModel: '', mistralKey: '', mistralModel: '', defaultAiProvider: 'gemini'
+    }),
     saveQuiz: async () => true,
     getQuizzes: async () => [],
     deleteQuiz: async () => true,
     fetchMbid: async (_artist: string) => null,
-    fetchFanart: async (_mbid: string, _key: string, _id: number) => null,
+    fetchFanart: async (_mbid: string, _id: number) => null,
     setConfig: async () => true,
     openSpotify: async () => {},
     broadcastState: () => {},
@@ -28,6 +34,8 @@ const getApi = () => window.electronAPI || {
     updateRemoteGuid: async () => true,
     openPresentationWindow: async () => {},
     onStateUpdate: () => {},
+    listProviderModels: async () => [],
+    generateTrivia: async () => '[]',
 } as unknown as typeof window.electronAPI;
 
 const Builder: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
@@ -59,20 +67,34 @@ const Builder: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
         isSearching: false
     });
 
+    const [selectedProvider, setSelectedProvider] = useState<AiProvider>('gemini');
+
     // States for incremental progress
     const [_currentGeneratingIdx, setCurrentGeneratingIdx] = useState<number>(-1);
     const [statusText, setStatusText] = useState('');
     const [currentError, setCurrentError] = useState<string | null>(null);
 
     useEffect(() => {
-        getApi().getConfig().then(setConfig);
+        getApi().getConfig().then(cfg => {
+            setConfig(cfg);
+            const def = (cfg.defaultAiProvider || 'gemini') as AiProvider;
+            setSelectedProvider(def);
+        });
         getApi().getQuizzes().then(setSavedQuizzes);
     }, []);
 
-    // Reload quizzes when the tab becomes active
+    // Reload config and quizzes when the tab becomes active
     useEffect(() => {
         if (isActive) {
             getApi().getQuizzes().then(setSavedQuizzes);
+            getApi().getConfig().then(cfg => {
+                setConfig(cfg);
+                setSelectedProvider(prev => {
+                    const cfgMap = cfg as Record<string, string>;
+                    const configured = AI_PROVIDERS.filter(p => cfgMap[`${p}Key`] && cfgMap[`${p}Model`]) as AiProvider[];
+                    return configured.includes(prev) ? prev : (configured[0] || (cfg.defaultAiProvider as AiProvider) || 'gemini');
+                });
+            });
         }
     }, [isActive]);
 
@@ -129,23 +151,29 @@ const Builder: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
     };
 
     const handleGenerate = async () => {
-        if (!config?.geminiKey) return alert('Missing Gemini API Key in Setup!');
-        if (!config?.geminiModel) return alert('No Gemini Model selected in Setup!');
+        const currentConfig = await getApi().getConfig();
+        setConfig(currentConfig);
+
+        const cfgMap = currentConfig as Record<string, string>;
+        const providerKey = cfgMap[`${selectedProvider}Key`];
+        const providerModel = cfgMap[`${selectedProvider}Model`];
+        if (!providerKey) return alert(`Missing API key for ${PROVIDER_LABELS[selectedProvider]} in Setup!`);
+        if (!providerModel) return alert(`No model selected for ${PROVIDER_LABELS[selectedProvider]} in Setup!`);
+
         const validArtists = artists.filter(a => a.trim());
         if (validArtists.length === 0) return alert('Enter at least one artist!');
 
         setIsGenerating(true);
         setCurrentError(null);
         setQuizData([]);
-        setStatusText('🤖 Generating trivia for all artists...');
+        setStatusText(`🤖 Generating trivia via ${PROVIDER_LABELS[selectedProvider]}...`);
 
         try {
-            // Get fresh configuration
-            const currentConfig = await getApi().getConfig();
-            setConfig(currentConfig);
-
             const mod = DIFFICULTY_MAP[difficulty];
-            const batchResults = await generateArtistTrivia(currentConfig.geminiKey, validArtists, mod, currentConfig.geminiModel);
+            const prompt = buildTriviaPrompt(validArtists, mod);
+            const raw = await getApi().generateTrivia(selectedProvider, providerModel, prompt);
+            const sanitized = raw.replace(/```json/g, '').replace(/```/g, '').trim();
+            const batchResults = validateQuizData(JSON.parse(sanitized));
 
             for (let i = 0; i < batchResults.length; i++) {
                 const res = batchResults[i];
@@ -199,7 +227,7 @@ const Builder: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
                     const mbid = await getApi().fetchMbid(artist);
                     if (mbid) {
                         const quizId = editingQuizId || Date.now();
-                        const fanart = await getApi().fetchFanart(mbid, currentConfig.fanartPersonalApiKey, quizId);
+                        const fanart = await getApi().fetchFanart(mbid, quizId);
                         if (fanart) {
                             res.fanart_logo = fanart.logoUrl;
                             res.fanart_backgrounds = fanart.backgroundUrls;
@@ -340,7 +368,36 @@ const Builder: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
                         )}
 
                         <h3 style={{ margin: 0, color: 'var(--secondary)' }}>✨ Create a New Quiz</h3>
-                        <h4 style={{ margin: 0, color: '#aaa', fontWeight: 400, fontSize: '0.95rem' }}>1. Choose Your Artists</h4>
+
+                        {(() => {
+                            const configuredProviders = config
+                                ? AI_PROVIDERS.filter(p => config[`${p}Key`] && config[`${p}Model`])
+                                : [];
+                            const selectedModel = config ? config[`${selectedProvider}Model`] as string : '';
+                            return (
+                                <div>
+                                    <h4 style={{ margin: '0.5rem 0 0.5rem 0', color: '#aaa', fontWeight: 400, fontSize: '0.95rem' }}>1. Select AI Provider</h4>
+                                    {configuredProviders.length === 0 ? (
+                                        <p style={{ color: '#ff8c00', fontSize: '0.9rem', margin: 0 }}>⚠️ No AI providers configured. Go to the Config tab to add a provider.</p>
+                                    ) : (
+                                        <>
+                                            <select
+                                                value={selectedProvider}
+                                                onChange={e => setSelectedProvider(e.target.value as AiProvider)}
+                                                style={{ width: '100%', padding: '0.8rem', borderRadius: '8px', background: 'rgba(0,0,0,0.3)', color: '#fff', border: '1px solid rgba(255,255,255,0.2)', marginBottom: '0.4rem' }}
+                                            >
+                                                {configuredProviders.map(p => (
+                                                    <option key={p} value={p}>{PROVIDER_LABELS[p]}</option>
+                                                ))}
+                                            </select>
+                                            {selectedModel && <p style={{ color: '#888', fontSize: '0.78rem', margin: '0 0 0.25rem 0' }}>Model: {selectedModel}</p>}
+                                        </>
+                                    )}
+                                </div>
+                            );
+                        })()}
+
+                        <h4 style={{ margin: 0, color: '#aaa', fontWeight: 400, fontSize: '0.95rem' }}>2. Choose Your Artists</h4>
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1rem' }}>
                             {artists.map((a, i) => (
                                 <input
@@ -355,7 +412,7 @@ const Builder: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
                         </div>
 
                         <label>
-                            <h4 style={{ margin: '0.5rem 0 0.5rem 0', color: '#aaa', fontWeight: 400, fontSize: '0.95rem' }}>2. Select Difficulty</h4>
+                            <h4 style={{ margin: '0.5rem 0 0.5rem 0', color: '#aaa', fontWeight: 400, fontSize: '0.95rem' }}>3. Select Difficulty</h4>
                             <select value={difficulty} onChange={e => setDifficulty(e.target.value)}>
                                 <option value="Casual">Casual Listener (Easy - Mainstream Hits)</option>
                                 <option value="Fan">Dedicated Fan (Medium - Album Tracks)</option>
@@ -363,9 +420,16 @@ const Builder: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
                             </select>
                         </label>
 
-                        <button onClick={handleGenerate} style={{ marginTop: '1rem', padding: '1.2rem', fontSize: '1.2rem' }}>
-                            ✨ Generate Magic Lore Quiz ✨
-                        </button>
+                        {(() => {
+                            const configuredProviders = config
+                                ? AI_PROVIDERS.filter(p => config[`${p}Key`] && config[`${p}Model`])
+                                : [];
+                            return (
+                                <button onClick={handleGenerate} disabled={configuredProviders.length === 0} style={{ marginTop: '1rem', padding: '1.2rem', fontSize: '1.2rem' }}>
+                                    ✨ Generate Magic Lore Quiz ✨
+                                </button>
+                            );
+                        })()}
                         <button onClick={() => navigate('/')} style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.2)', boxShadow: 'none' }}>
                             Back to Home
                         </button>

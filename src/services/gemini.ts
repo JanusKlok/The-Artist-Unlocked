@@ -31,9 +31,9 @@ const VALID_ANIMATION_TYPES = ['lightning', 'bubbles', 'neon_grid', 'spotlight',
 const VALID_FONT_STYLES = ['heavy', 'elegant', 'grunge', 'retro'];
 const VALID_BACKGROUND_STYLES = ['dark', 'gradient', 'smoky', 'grid-overlay'];
 
-function validateQuizData(data: unknown): QuizArtist[] {
+export function validateQuizData(data: unknown): QuizArtist[] {
     if (!Array.isArray(data)) {
-        throw new Error('Gemini returned invalid data: expected a JSON array.');
+        throw new Error('AI returned invalid data: expected a JSON array.');
     }
 
     return data.map((item: Record<string, unknown>, i: number) => {
@@ -115,10 +115,10 @@ export const listModels = async (geminiKey: string): Promise<string[]> => {
     }
 };
 
-export const generateArtistTrivia = async (geminiKey: string, artistNames: string[], difficultyModifier: string, model: string = 'gemini-1.5-flash'): Promise<QuizArtist[]> => {
+export function buildTriviaPrompt(artistNames: string[], difficultyModifier: string): string {
     const count = artistNames.length;
     const artistsList = artistNames.join(', ');
-    const prompt = `You are an expert music historian and trivia master. Your task is to generate a trivia dataset for the following ${count} artists: ${artistsList}.
+    return `You are an expert music historian and trivia master. Your task is to generate a trivia dataset for the following ${count} artists: ${artistsList}.
 You must return the response strictly as a valid JSON array of ${count} objects, each matching the exact structure below. Do not include markdown formatting, code blocks, or conversational text outside of the JSON array.
 
 Difficulty Constraints:
@@ -172,6 +172,10 @@ JSON Structure (Return an ARRAY of ${count} of these):
     { "tier": 5, "points": 50, "target": "Category", "spoken_hint": "The hint", "answer": "The answer", "audio_hint_song": "Song Title" }
   ]
 }`;
+}
+
+export const generateArtistTrivia = async (geminiKey: string, artistNames: string[], difficultyModifier: string, model: string = 'gemini-1.5-flash'): Promise<QuizArtist[]> => {
+    const prompt = buildTriviaPrompt(artistNames, difficultyModifier);
 
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
         method: 'POST',

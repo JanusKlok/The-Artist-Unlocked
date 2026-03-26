@@ -8,6 +8,15 @@ export interface AppConfig {
     spotifyClientSecret: string;
     fanartPersonalApiKey: string;
     spotifyMobileMode: string;
+    openaiKey: string;
+    openaiModel: string;
+    anthropicKey: string;
+    anthropicModel: string;
+    groqKey: string;
+    groqModel: string;
+    mistralKey: string;
+    mistralModel: string;
+    defaultAiProvider: string;
 }
 
 export interface FanartAssets {
@@ -34,7 +43,9 @@ export interface ElectronAPI {
     getQuizzes: () => Promise<SavedQuiz[]>;
     deleteQuiz: (quizId: number) => Promise<boolean>;
     fetchMbid: (artistName: string) => Promise<string | null>;
-    fetchFanart: (mbid: string, personalApiKey: string, quizId: number) => Promise<FanartAssets | null>;
+    fetchFanart: (mbid: string, quizId: number) => Promise<FanartAssets | null>;
+    listProviderModels: (provider: string, apiKey?: string) => Promise<string[]>;
+    generateTrivia: (provider: string, model: string, prompt: string) => Promise<string>;
 }
 
 declare global {

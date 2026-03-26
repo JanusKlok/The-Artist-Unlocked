@@ -1,4 +1,5 @@
 import { app, BrowserWindow, ipcMain, shell, safeStorage, protocol, net } from 'electron';
+import { listProviderModels, fetchTriviaCompletion } from './aiProviders.js';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
@@ -52,7 +53,12 @@ function getLocalIP() {
  */
 function getConfig() {
     try {
-        if (!fs.existsSync(configPath)) return { geminiKey: '', geminiModel: '', spotifyClientId: '', spotifyClientSecret: '', fanartPersonalApiKey: '', spotifyMobileMode: 'desktop' };
+        if (!fs.existsSync(configPath)) return {
+            geminiKey: '', geminiModel: '', spotifyClientId: '', spotifyClientSecret: '',
+            fanartPersonalApiKey: '', spotifyMobileMode: 'desktop',
+            openaiKey: '', openaiModel: '', anthropicKey: '', anthropicModel: '',
+            groqKey: '', groqModel: '', mistralKey: '', mistralModel: '', defaultAiProvider: 'gemini'
+        };
         const data = JSON.parse(fs.readFileSync(configPath, 'utf8'));
 
         const decrypted = {
@@ -61,7 +67,16 @@ function getConfig() {
             spotifyClientId: '',
             spotifyClientSecret: '',
             fanartPersonalApiKey: '',
-            spotifyMobileMode: data.spotifyMobileMode || 'desktop'
+            spotifyMobileMode: data.spotifyMobileMode || 'desktop',
+            openaiKey: '',
+            openaiModel: data.openaiModel || '',
+            anthropicKey: '',
+            anthropicModel: data.anthropicModel || '',
+            groqKey: '',
+            groqModel: data.groqModel || '',
+            mistralKey: '',
+            mistralModel: data.mistralModel || '',
+            defaultAiProvider: data.defaultAiProvider || 'gemini'
         };
 
         // Decrypt if available
@@ -70,12 +85,29 @@ function getConfig() {
             decrypted.spotifyClientId = data.spotifyClientId ? safeStorage.decryptString(Buffer.from(data.spotifyClientId, 'base64')) : '';
             decrypted.spotifyClientSecret = data.spotifyClientSecret ? safeStorage.decryptString(Buffer.from(data.spotifyClientSecret, 'base64')) : '';
             decrypted.fanartPersonalApiKey = data.fanartPersonalApiKey ? safeStorage.decryptString(Buffer.from(data.fanartPersonalApiKey, 'base64')) : '';
+            decrypted.openaiKey = data.openaiKey ? safeStorage.decryptString(Buffer.from(data.openaiKey, 'base64')) : '';
+            decrypted.anthropicKey = data.anthropicKey ? safeStorage.decryptString(Buffer.from(data.anthropicKey, 'base64')) : '';
+            decrypted.groqKey = data.groqKey ? safeStorage.decryptString(Buffer.from(data.groqKey, 'base64')) : '';
+            decrypted.mistralKey = data.mistralKey ? safeStorage.decryptString(Buffer.from(data.mistralKey, 'base64')) : '';
             return decrypted;
         }
-        return { ...data, spotifyMobileMode: data.spotifyMobileMode || 'desktop' };
+        return {
+            ...data,
+            spotifyMobileMode: data.spotifyMobileMode || 'desktop',
+            openaiKey: data.openaiKey || '', openaiModel: data.openaiModel || '',
+            anthropicKey: data.anthropicKey || '', anthropicModel: data.anthropicModel || '',
+            groqKey: data.groqKey || '', groqModel: data.groqModel || '',
+            mistralKey: data.mistralKey || '', mistralModel: data.mistralModel || '',
+            defaultAiProvider: data.defaultAiProvider || 'gemini'
+        };
     } catch (e) {
         console.error('Failed to read config', e);
-        return { geminiKey: '', geminiModel: '', spotifyClientId: '', spotifyClientSecret: '', fanartPersonalApiKey: '', spotifyMobileMode: 'desktop' };
+        return {
+            geminiKey: '', geminiModel: '', spotifyClientId: '', spotifyClientSecret: '',
+            fanartPersonalApiKey: '', spotifyMobileMode: 'desktop',
+            openaiKey: '', openaiModel: '', anthropicKey: '', anthropicModel: '',
+            groqKey: '', groqModel: '', mistralKey: '', mistralModel: '', defaultAiProvider: 'gemini'
+        };
     }
 }
 
@@ -87,13 +119,23 @@ function setConfig(newConfig: any) {
     try {
         let dataToSave = { ...newConfig };
         if (safeStorage.isEncryptionAvailable()) {
+            const enc = (val: string) => val ? safeStorage.encryptString(val).toString('base64') : '';
             dataToSave = {
-                geminiKey: newConfig.geminiKey ? safeStorage.encryptString(newConfig.geminiKey).toString('base64') : '',
+                geminiKey: enc(newConfig.geminiKey),
                 geminiModel: newConfig.geminiModel || '',
-                spotifyClientId: newConfig.spotifyClientId ? safeStorage.encryptString(newConfig.spotifyClientId).toString('base64') : '',
-                spotifyClientSecret: newConfig.spotifyClientSecret ? safeStorage.encryptString(newConfig.spotifyClientSecret).toString('base64') : '',
-                fanartPersonalApiKey: newConfig.fanartPersonalApiKey ? safeStorage.encryptString(newConfig.fanartPersonalApiKey).toString('base64') : '',
-                spotifyMobileMode: newConfig.spotifyMobileMode || 'desktop'
+                spotifyClientId: enc(newConfig.spotifyClientId),
+                spotifyClientSecret: enc(newConfig.spotifyClientSecret),
+                fanartPersonalApiKey: enc(newConfig.fanartPersonalApiKey),
+                spotifyMobileMode: newConfig.spotifyMobileMode || 'desktop',
+                openaiKey: enc(newConfig.openaiKey),
+                openaiModel: newConfig.openaiModel || '',
+                anthropicKey: enc(newConfig.anthropicKey),
+                anthropicModel: newConfig.anthropicModel || '',
+                groqKey: enc(newConfig.groqKey),
+                groqModel: newConfig.groqModel || '',
+                mistralKey: enc(newConfig.mistralKey),
+                mistralModel: newConfig.mistralModel || '',
+                defaultAiProvider: newConfig.defaultAiProvider || 'gemini'
             };
         }
         fs.writeFileSync(configPath, JSON.stringify(dataToSave, null, 2));
@@ -225,8 +267,10 @@ ipcMain.handle('fetch-mbid', async (event, artistName) => {
     }
 });
 
-ipcMain.handle('fetch-fanart', async (event, mbid, personalApiKey, quizId) => {
+ipcMain.handle('fetch-fanart', async (event, mbid, quizId) => {
     try {
+        const personalApiKey = getConfig().fanartPersonalApiKey;
+        if (!personalApiKey) return null;
         const FANART_PROJECT_KEY = '5abfea3e4693ea492dedae876e5bc3da';
         const url = `https://webservice.fanart.tv/v3/music/${mbid}?api_key=${FANART_PROJECT_KEY}&client_key=${personalApiKey}`;
         const response = await fetch(url);
@@ -430,6 +474,27 @@ ipcMain.handle('start-remote-server', async (event, initialGuid) => {
     });
 
     return getLocalIP();
+});
+
+ipcMain.handle('list-provider-models', async (_event, provider: string, apiKeyOverride?: string) => {
+    const cfg = getConfig() as Record<string, string>;
+    const key = apiKeyOverride || cfg[`${provider}Key`] || '';
+    if (!key) return [];
+    return listProviderModels(provider as Parameters<typeof listProviderModels>[0], key);
+});
+
+ipcMain.handle('generate-trivia', async (_event, provider: string, model: string, prompt: string) => {
+    const cfg = getConfig();
+    const keyMap: Record<string, string> = {
+        gemini: cfg.geminiKey,
+        openai: cfg.openaiKey,
+        anthropic: cfg.anthropicKey,
+        groq: cfg.groqKey,
+        mistral: cfg.mistralKey,
+    };
+    const apiKey = keyMap[provider];
+    if (!apiKey) throw new Error(`No API key configured for provider: ${provider}`);
+    return fetchTriviaCompletion(provider as Parameters<typeof fetchTriviaCompletion>[0], apiKey, model, prompt);
 });
 
 ipcMain.handle('open-presentation-window', () => {

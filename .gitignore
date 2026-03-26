@@ -35,5 +35,7 @@ config.json
 quizzes/
 src/services/mock_data.json
 
-#AI Agent folders
+#AI Agent folders and files
 .claude/
+CLAUDE.md
+GEMINI.md

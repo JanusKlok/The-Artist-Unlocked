@@ -7,7 +7,12 @@ import Presentation from './views/Presentation';
 import ErrorBoundary from './components/ErrorBoundary';
 
 const getApi = () => window.electronAPI || {
-    getConfig: async () => ({ geminiKey: '', geminiModel: '', spotifyClientId: '', spotifyClientSecret: '', fanartPersonalApiKey: '', spotifyMobileMode: 'desktop' }),
+    getConfig: async () => ({
+        geminiKey: '', geminiModel: '', spotifyClientId: '', spotifyClientSecret: '',
+        fanartPersonalApiKey: '', spotifyMobileMode: 'desktop',
+        openaiKey: '', openaiModel: '', anthropicKey: '', anthropicModel: '',
+        groqKey: '', groqModel: '', mistralKey: '', mistralModel: '', defaultAiProvider: 'gemini'
+    }),
     getQuizzes: async () => [],
 };
 
@@ -20,7 +25,13 @@ const MainLayout: React.FC = () => {
             const config = await getApi().getConfig();
             const quizzes = await getApi().getQuizzes();
 
-            const isConfigComplete = config.geminiKey && config.geminiModel && config.spotifyClientId && config.spotifyClientSecret;
+            const defaultProvider = config.defaultAiProvider || 'gemini';
+            const cfg = config as Record<string, string>;
+            const isConfigComplete =
+                cfg[`${defaultProvider}Key`] &&
+                cfg[`${defaultProvider}Model`] &&
+                config.spotifyClientId &&
+                config.spotifyClientSecret;
             const hasQuizzes = quizzes && quizzes.length > 0;
 
             if (!isConfigComplete) {
