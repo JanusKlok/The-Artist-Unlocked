@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import type { QuizArtist } from '../services/gemini';
+import type { QuizArtist } from '../services/ai';
 import { calculatePoints, getNextState, getPrevState, INITIAL_GAME_STATE, type GameState } from '../utils/gameLogic';
 import type { SavedQuiz, AppConfig } from '../types/electron';
 import QRCode from 'qrcode';

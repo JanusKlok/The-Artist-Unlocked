@@ -2,7 +2,7 @@ import React, { useEffect, useState, useMemo, useRef } from 'react';
 import Particles, { initParticlesEngine } from '@tsparticles/react';
 import { loadFull } from 'tsparticles';
 import type { GameState } from '../utils/gameLogic';
-import type { QuizArtist } from '../services/gemini';
+import type { QuizArtist } from '../services/ai';
 import { sounds } from '../utils/sounds';
 
 // Font style mapping

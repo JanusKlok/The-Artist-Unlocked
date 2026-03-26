@@ -1,4 +1,4 @@
-import type { QuizArtist } from '../services/gemini';
+import type { QuizArtist } from '../services/ai';
 
 export interface Team {
     name: string;

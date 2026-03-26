@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { buildTriviaPrompt, validateQuizData } from '../services/gemini';
-import type { QuizArtist } from '../services/gemini';
+import { buildTriviaPrompt, validateQuizData } from '../services/ai';
+import type { QuizArtist } from '../services/ai';
 import { searchTracks, type SpotifyTrack } from '../services/spotify';
 import { AI_PROVIDERS, PROVIDER_LABELS, type AiProvider } from '../types/ai';
 
