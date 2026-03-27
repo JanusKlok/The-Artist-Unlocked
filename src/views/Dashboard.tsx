@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import type { QuizArtist } from '../services/ai';
-import { calculatePoints, getNextState, getPrevState, INITIAL_GAME_STATE, type GameState } from '../utils/gameLogic';
+import { calculatePoints, getNextState, getPrevState, INITIAL_GAME_STATE, type GameState, type SavedTeam } from '../utils/gameLogic';
 import type { SavedQuiz, AppConfig } from '../types/electron';
 import QRCode from 'qrcode';
 import { v4 as uuidv4 } from 'uuid';
 import './Dashboard.css';
+
+const TEAMS_STORAGE_KEY = 'artist-unlocked:saved-teams';
 
 const getApi = () => {
     if (window.electronAPI) return window.electronAPI;
@@ -29,6 +31,14 @@ const Dashboard: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
     const [savedQuizzes, setSavedQuizzes] = useState<SavedQuiz[]>([]);
     const [answerPeeked, setAnswerPeeked] = useState(false);
     const [newTeamName, setNewTeamName] = useState('');
+    const [savedTeams, setSavedTeams] = useState<SavedTeam[]>(() => {
+        try {
+            const raw = localStorage.getItem(TEAMS_STORAGE_KEY);
+            return raw ? (JSON.parse(raw) as SavedTeam[]) : [];
+        } catch {
+            return [];
+        }
+    });
     const [showWagerModal, setShowWagerModal] = useState(false);
     const [remoteGuid, setRemoteGuid] = useState(uuidv4());
     const [qrDataUrl, setQrDataUrl] = useState('');
@@ -86,6 +96,11 @@ const Dashboard: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
         return () => clearInterval(interval);
     }, [remoteIp, gameState]);
 
+    // Persist team roster to localStorage
+    useEffect(() => {
+        localStorage.setItem(TEAMS_STORAGE_KEY, JSON.stringify(savedTeams));
+    }, [savedTeams]);
+
     // Reload quizzes and config when the tab becomes active
     useEffect(() => {
         if (isActive) {
@@ -122,7 +137,7 @@ const Dashboard: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
         broadcast({
             ...INITIAL_GAME_STATE,
             quizData,
-            teams: gameState.teams,
+            teams: savedTeams.filter(t => t.active).map(t => ({ name: t.name, score: 0, allInUsed: false })),
             timerDuration: gameState.timerDuration,
             timerAutoStart: gameState.timerAutoStart,
             spotifyMobileMode: (cfg?.spotifyMobileMode || 'desktop') as GameState['spotifyMobileMode'],
@@ -138,9 +153,20 @@ const Dashboard: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
     };
 
     const addTeam = () => {
-        if (!newTeamName.trim()) return;
-        broadcast({ ...gameState, teams: [...gameState.teams, { name: newTeamName.trim(), score: 0, allInUsed: false }] });
+        const name = newTeamName.trim();
+        if (!name) return;
+        if (savedTeams.some(t => t.name.toLowerCase() === name.toLowerCase())) return;
+        setSavedTeams(prev => [...prev, { name, active: true }]);
         setNewTeamName('');
+    };
+
+    const toggleTeamActive = (idx: number) => {
+        setSavedTeams(prev => prev.map((t, i) => i === idx ? { ...t, active: !t.active } : t));
+    };
+
+    const deleteTeam = (idx: number) => {
+        if (!window.confirm(`Delete team "${savedTeams[idx].name}"? This cannot be undone.`)) return;
+        setSavedTeams(prev => prev.filter((_, i) => i !== idx));
     };
 
     const addPointsToTeam = (idx: number, pts: number, isWager = false) => {
@@ -291,12 +317,18 @@ const Dashboard: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
                             <input value={newTeamName} onChange={e => setNewTeamName(e.target.value)} placeholder="Enter team name..." onKeyDown={e => e.key === 'Enter' && addTeam()} />
                             <button className="btn-md btn-primary" onClick={addTeam}>+ Add Team</button>
                         </div>
-                        {gameState.teams.length > 0 && (
-                            <div className="team-chips">
-                                {gameState.teams.map((t, i) => (
-                                    <div key={i} className="team-chip">
-                                        <strong>{t.name}</strong>
-                                        <button className="remove-btn" onClick={() => { const teams = gameState.teams.filter((_, idx) => idx !== i); broadcast({ ...gameState, teams }); }}>✕</button>
+                        {savedTeams.length > 0 && (
+                            <div className="team-roster">
+                                {savedTeams.map((t, i) => (
+                                    <div key={i} className={`team-roster-row${t.active ? '' : ' team-roster-row--inactive'}`}>
+                                        <span className="team-roster-name">{t.name}</span>
+                                        <button
+                                            className={`btn-sm ${t.active ? 'team-toggle--on' : 'team-toggle--off'}`}
+                                            onClick={() => toggleTeamActive(i)}
+                                        >
+                                            {t.active ? 'Active' : 'Inactive'}
+                                        </button>
+                                        <button className="btn-sm team-delete-btn" onClick={() => deleteTeam(i)}>✕</button>
                                     </div>
                                 ))}
                             </div>

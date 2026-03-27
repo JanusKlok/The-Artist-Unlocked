@@ -1,5 +1,10 @@
 import type { QuizArtist } from '../services/ai';
 
+export interface SavedTeam {
+    name: string;
+    active: boolean;
+}
+
 export interface Team {
     name: string;
     score: number;
