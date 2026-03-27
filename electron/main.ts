@@ -3,7 +3,7 @@ import { listProviderModels, fetchTriviaCompletion } from './aiProviders.js';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
-import express from 'express';
+import express, { type Request, type Response } from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 
@@ -13,9 +13,9 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Polyfill global __dirname/__filename for ESM — required by Express/Socket.io internals (e.g. `send` package)
-// @ts-ignore
+// @ts-expect-error - globalThis does not declare __dirname in ESM context
 globalThis.__dirname = __dirname;
-// @ts-ignore
+// @ts-expect-error - globalThis does not declare __filename in ESM context
 globalThis.__filename = __filename;
 
 let mainWindow: BrowserWindow | null = null;
@@ -115,7 +115,18 @@ function getConfig() {
  * Saves the application configuration to the local user data directory.
  * Encrypts sensitive keys using Electron's safeStorage API.
  */
-function setConfig(newConfig: any) {
+interface ConfigData {
+    geminiKey?: string; geminiModel?: string;
+    spotifyClientId?: string; spotifyClientSecret?: string; spotifyMobileMode?: string;
+    fanartPersonalApiKey?: string;
+    openaiKey?: string; openaiModel?: string;
+    anthropicKey?: string; anthropicModel?: string;
+    groqKey?: string; groqModel?: string;
+    mistralKey?: string; mistralModel?: string;
+    defaultAiProvider?: string;
+}
+
+function setConfig(newConfig: ConfigData) {
     try {
         let dataToSave = { ...newConfig };
         if (safeStorage.isEncryptionAvailable()) {
@@ -256,7 +267,7 @@ ipcMain.handle('fetch-mbid', async (event, artistName) => {
         const data = await response.json();
         
         if (data && data.artists && data.artists.length > 0) {
-            const exactMatch = data.artists.find((a: any) => a.name.toLowerCase() === artistName.toLowerCase());
+            const exactMatch = data.artists.find((a: { name: string; id: string }) => a.name.toLowerCase() === artistName.toLowerCase());
             if (exactMatch) return exactMatch.id;
             return data.artists[0].id;
         }
@@ -348,8 +359,8 @@ ipcMain.handle('delete-quiz', async (event, quizId) => {
 });
 
 // Mode C Local Server Spin-up
-let latestGameState: any = null;
-let cachedQuizData: any[] = [];
+let latestGameState: unknown = null;
+let cachedQuizData: unknown[] = [];
 let currentRemoteGuid: string = '';
 let previousRemoteGuid: string = ''; // Grace period for rotation
 
@@ -409,7 +420,7 @@ ipcMain.handle('start-remote-server', async (event, initialGuid) => {
     // Serve the dedicated mobile quizmaster remote control page (cached in memory)
     const mobilePath = path.join(__dirname, '../public/mobile-remote.html');
     let mobileHtmlCache: string | null = null;
-    expressApp.get('/', (req: any, res: any) => {
+    expressApp.get('/', (req: Request, res: Response) => {
         const urlGuid = req.query.auth;
 
         if (urlGuid !== currentRemoteGuid && urlGuid !== previousRemoteGuid) {

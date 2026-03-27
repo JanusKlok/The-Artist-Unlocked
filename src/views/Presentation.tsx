@@ -11,6 +11,32 @@ const FONT_MAP: Record<string, string> = {
     elegant: "'Playfair Display', serif",
     grunge: "'Rock Salt', cursive",
     retro: "'Press Start 2P', monospace",
+    'hip-hop': "'Anton', sans-serif",
+    handwritten: "'Permanent Marker', cursive",
+    vaporwave: "'Monoton', cursive",
+    industrial: "'Black Ops One', cursive",
+    lounge: "'Satisfy', cursive",
+    pop: "'Poppins', sans-serif",
+    country: "'Rye', serif",
+    funk: "'Righteous', cursive",
+    techno: "'Orbitron', sans-serif",
+    latin: "'Fredoka One', cursive",
+    reggae: "'Lobster', cursive",
+    blues: "'Abril Fatface', serif",
+    classical: "'Cinzel', serif",
+    folk: "'Amatic SC', cursive",
+    emo: "'Kalam', cursive",
+    glam: "'Audiowide', sans-serif",
+    gospel: "'Alfa Slab One', serif",
+    psychedelic: "'Boogaloo', cursive",
+    'country-pop': "'Pacifico', cursive",
+    'jazz-modern': "'Oswald', sans-serif",
+    shoegaze: "'Josefin Sans', sans-serif",
+    trap: "'Exo 2', sans-serif",
+    'metal-death': "'UnifrakturMaguntia', cursive",
+    'new-wave': "'Special Elite', cursive",
+    opera: "'Cormorant SC', serif",
+    'indie-pop': "'Comfortaa', cursive",
 };
 
 const FONT_IMPORTS = [
@@ -20,6 +46,32 @@ const FONT_IMPORTS = [
     'Playfair+Display:wght@400;700;900',
     'Rock+Salt',
     'Press+Start+2P',
+    'Anton',
+    'Permanent+Marker',
+    'Monoton',
+    'Black+Ops+One',
+    'Satisfy',
+    'Poppins:wght@400;700;900',
+    'Rye',
+    'Righteous',
+    'Orbitron:wght@400;700;900',
+    'Fredoka+One',
+    'Lobster',
+    'Abril+Fatface',
+    'Cinzel:wght@400;700;900',
+    'Amatic+SC:wght@400;700',
+    'Kalam:wght@300;400;700',
+    'Audiowide',
+    'Alfa+Slab+One',
+    'Boogaloo',
+    'Pacifico',
+    'Oswald:wght@400;600;700',
+    'Josefin+Sans:wght@300;400;700',
+    'Exo+2:wght@400;700;900',
+    'UnifrakturMaguntia',
+    'Special+Elite',
+    'Cormorant+SC:wght@400;600;700',
+    'Comfortaa:wght@400;700',
 ].join('&family=');
 
 const AnimatedScore: React.FC<{ target: number }> = ({ target }) => {
@@ -61,7 +113,7 @@ const Presentation: React.FC = () => {
 
     useEffect(() => {
         isMountedRef.current = true;
-        initParticlesEngine(async (engine: any) => {
+        initParticlesEngine(async (engine) => {
             await loadFull(engine);
         }).then(() => {
             if (isMountedRef.current) setInit(true);
@@ -87,9 +139,7 @@ const Presentation: React.FC = () => {
 
     // Scroll to top on step change
     useEffect(() => {
-        if (gameState) {
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-        }
+        window.scrollTo({ top: 0, behavior: 'smooth' });
     }, [gameState?.activeArtistIndex, gameState?.activeTier]);
 
     // Scroll to answer when revealed
@@ -138,10 +188,11 @@ const Presentation: React.FC = () => {
             localMounted = false;
             clearTimeout(timer);
         };
-    }, [gameState?.activeArtistIndex, gameState?.quizData?.[gameState?.activeArtistIndex ?? 0]?.visual_theme?.animation_type]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [gameState?.activeArtistIndex, gameState?.quizData?.[gameState?.activeArtistIndex ?? 0]?.visual_theme?.animation_type]); // intentional: only restart on artist/animation change, not every state update
 
     const artist = useMemo(() => {
-        if (!gameState || !gameState.quizData.length) return null;
+        if (!gameState?.quizData?.length) return null;
         return gameState.quizData[gameState.activeArtistIndex];
     }, [gameState?.activeArtistIndex, gameState?.quizData]);
 
@@ -177,14 +228,13 @@ const Presentation: React.FC = () => {
 
     // Visual transition on question change — increment key to force remount + animation
     useEffect(() => {
-        if (!gameState) return;
-        const changed = gameState.activeArtistIndex !== prevArtistIndexRef.current
-            || gameState.activeTier !== prevTierRef.current;
-        if (changed) {
-            setTransitionKey(k => k + 1);
-        }
-        prevArtistIndexRef.current = gameState.activeArtistIndex;
-        prevTierRef.current = gameState.activeTier;
+        const idx = gameState?.activeArtistIndex;
+        const tier = gameState?.activeTier;
+        if (idx === undefined || tier === undefined) return;
+        const changed = idx !== prevArtistIndexRef.current || tier !== prevTierRef.current;
+        if (changed) setTransitionKey(k => k + 1);
+        prevArtistIndexRef.current = idx;
+        prevTierRef.current = tier;
     }, [gameState?.activeArtistIndex, gameState?.activeTier]);
 
     // Timer display effect
@@ -225,7 +275,7 @@ const Presentation: React.FC = () => {
     const thematicParticles = useMemo(() => {
         if (!theme) return null;
         return getThematicParticles(theme);
-    }, [theme?.animation_type, theme?.primary_color, theme?.secondary_color]);
+    }, [theme]);
 
     const ambientParticles = useMemo(() => ({
         fullScreen: { enable: false },
@@ -252,7 +302,7 @@ const Presentation: React.FC = () => {
             }
         },
         detectRetina: false
-    }), [theme?.animation_type, theme?.primary_color, theme?.secondary_color]);
+    }), []);
 
     // Confetti particles for winner screen
     const confettiParticles = useMemo(() => ({
@@ -323,6 +373,7 @@ const Presentation: React.FC = () => {
     const artistFont = FONT_MAP[theme?.font_style ?? ''] || "'Syncopate', sans-serif";
 
     const bgStyle = theme!.background_style || 'dark';
+    const textEffectClass = theme?.text_effect && theme.text_effect !== 'none' ? `text-effect-${theme.text_effect}` : '';
 
     // Timer rendering helpers
     const timerSeconds = timerRemaining !== null ? Math.ceil(timerRemaining / 1000) : null;
@@ -360,9 +411,9 @@ const Presentation: React.FC = () => {
 
             {init && (
                 <>
-                    <Particles id="ambient-particles" options={ambientParticles as any} className="particle-layer" />
+                    <Particles id="ambient-particles" options={ambientParticles} className="particle-layer" />
                     {thematicParticles && (
-                        <Particles id="theme-particles" options={thematicParticles as any} className="particle-layer theme-layer" />
+                        <Particles id="theme-particles" options={thematicParticles} className="particle-layer theme-layer" />
                     )}
                 </>
             )}
@@ -411,13 +462,13 @@ const Presentation: React.FC = () => {
                         <div className="round-badge">ROUND {gameState.activeArtistIndex + 1}</div>
 
                         {isUnlockPhase ? (
-                            <h1 className="artist-name">???</h1>
+                            <h1 className={`artist-name ${textEffectClass}`}>???</h1>
                         ) : artist.fanart_logo ? (
                             <div className="artist-logo-container">
                                 <img src={artist.fanart_logo} alt={artist.artist} className="active-artist-logo" />
                             </div>
                         ) : (
-                            <h1 className="artist-name">{artist.artist}</h1>
+                            <h1 className={`artist-name ${textEffectClass}`}>{artist.artist}</h1>
                         )}
 
                         <p className="genre-tag">{artist.genre}</p>
@@ -529,7 +580,7 @@ const Presentation: React.FC = () => {
                     {/* Confetti */}
                     {init && (
                         <div className="confetti-layer">
-                            <Particles id="confetti-particles" options={confettiParticles as any} style={{ width: '100%', height: '100%' }} />
+                            <Particles id="confetti-particles" options={confettiParticles} style={{ width: '100%', height: '100%' }} />
                         </div>
                     )}
 
@@ -688,6 +739,47 @@ const Presentation: React.FC = () => {
                     background-size: 60px 60px;
                 }
 
+                /* Background style: scanlines (CRT effect) */
+                .bg-scanlines .bg-pattern {
+                    opacity: 1;
+                    background-image: repeating-linear-gradient(
+                        0deg,
+                        transparent,
+                        transparent 3px,
+                        rgba(0,0,0,0.18) 3px,
+                        rgba(0,0,0,0.18) 4px
+                    );
+                }
+
+                /* Background style: diagonal-stripe */
+                .bg-diagonal-stripe .bg-pattern {
+                    opacity: 0.07;
+                    background-image: repeating-linear-gradient(
+                        45deg,
+                        var(--primary-color),
+                        var(--primary-color) 2px,
+                        transparent 2px,
+                        transparent 22px
+                    );
+                }
+
+                /* Background style: vignette-burst */
+                .bg-vignette-burst .bg-gradient-layer {
+                    background: radial-gradient(ellipse 60% 70% at 50% 40%, var(--primary-color)99 0%, var(--secondary-color)44 35%, transparent 70%);
+                }
+                .bg-vignette-burst .bg-vignette {
+                    background: radial-gradient(ellipse at center, transparent 15%, rgba(0,0,0,0.92) 100%);
+                }
+
+                /* Background style: neon-border */
+                .bg-neon-border .bg-pattern {
+                    opacity: 1;
+                    box-shadow:
+                        inset 0 0 60px color-mix(in srgb, var(--primary-color) 45%, transparent),
+                        inset 0 0 120px color-mix(in srgb, var(--secondary-color) 20%, transparent);
+                    border: 2px solid var(--primary-color);
+                }
+
                 /* ---- Particle Layers ---- */
 
                 .particle-layer {
@@ -740,6 +832,39 @@ const Presentation: React.FC = () => {
                                  0 2px 4px rgba(0,0,0,0.8);
                     letter-spacing: -2px;
                     -webkit-text-stroke: 1px rgba(255,255,255,0.1);
+                }
+
+                /* ---- Text Effects ---- */
+
+                .artist-name.text-effect-glow {
+                    animation: glowPulse 3s ease-in-out infinite;
+                }
+                @keyframes glowPulse {
+                    0%, 100% { text-shadow: 0 0 30px var(--primary-glow), 0 0 60px var(--primary-glow), 0 2px 4px rgba(0,0,0,0.8); }
+                    50% { text-shadow: 0 0 60px var(--primary-glow), 0 0 120px var(--primary-glow), 0 0 20px var(--secondary-color), 0 2px 4px rgba(0,0,0,0.8); }
+                }
+
+                .artist-name.text-effect-neon {
+                    text-shadow:
+                        0 0 7px #fff,
+                        0 0 21px #fff,
+                        0 0 42px var(--primary-color),
+                        0 0 82px var(--primary-color),
+                        0 0 102px var(--secondary-color),
+                        0 0 151px var(--secondary-color);
+                }
+
+                .artist-name.text-effect-retro-3d {
+                    text-shadow:
+                        3px 3px 0 var(--secondary-color),
+                        6px 6px 0 rgba(0,0,0,0.4);
+                }
+
+                .artist-name.text-effect-stamp {
+                    transform: rotate(-1.5deg) skewX(1deg);
+                    text-shadow: 2px 2px 0 rgba(0,0,0,0.8);
+                    filter: contrast(1.1);
+                    display: inline-block;
                 }
 
                 .artist-logo-container {
@@ -899,7 +1024,7 @@ const Presentation: React.FC = () => {
                 .scoreboard-glass h3 {
                     margin: 0 0 1.5rem 0;
                     text-align: center;
-                    font-family: var(--artist-font, 'Syncopate', sans-serif);
+                    font-family: 'Syncopate', sans-serif;
                     letter-spacing: 4px;
                     font-size: 1.1rem;
                     color: var(--secondary-color);
@@ -1263,7 +1388,7 @@ function getThematicParticles(theme: QuizArtist['visual_theme']) {
     const color = theme.primary_color || '#00E5FF';
     const secondary = theme.secondary_color || '#ffffff';
 
-    const baseConfig: any = {
+    const baseConfig = {
         fullScreen: { enable: false },
         fpsLimit: 60,
         particles: {
@@ -1387,6 +1512,104 @@ function getThematicParticles(theme: QuizArtist['visual_theme']) {
                     size: { value: { min: 1, max: 2 } },
                     move: { ...baseConfig.particles.move, speed: 15, direction: "none", random: true },
                     opacity: { value: { min: 0.05, max: 0.4 }, animation: { enable: true, speed: 10 } }
+                }
+            };
+        case 'embers':
+            return {
+                ...baseConfig,
+                particles: {
+                    ...baseConfig.particles,
+                    number: { value: 45 },
+                    color: { value: [color, secondary, '#FF6B35', '#FFD700'] },
+                    shape: { type: "circle" },
+                    size: { value: { min: 1, max: 5 } },
+                    move: {
+                        enable: true,
+                        speed: { min: 1, max: 4 },
+                        direction: "top",
+                        outModes: "out",
+                        random: true,
+                        straight: false
+                    },
+                    opacity: { value: { min: 0.1, max: 0.8 }, animation: { enable: true, speed: 2, minimumValue: 0.1 } }
+                }
+            };
+        case 'galaxy':
+            return {
+                ...baseConfig,
+                particles: {
+                    ...baseConfig.particles,
+                    number: { value: 90 },
+                    color: { value: [color, secondary, '#ffffff', '#ccccff', '#ffeecc'] },
+                    shape: { type: "circle" },
+                    size: { value: { min: 0.5, max: 2.5 } },
+                    move: {
+                        enable: true,
+                        speed: 0.25,
+                        direction: "none",
+                        outModes: "out",
+                        random: true
+                    },
+                    opacity: { value: { min: 0.2, max: 1.0 }, animation: { enable: true, speed: 0.4, minimumValue: 0.2 } }
+                }
+            };
+        case 'rain':
+            return {
+                ...baseConfig,
+                particles: {
+                    ...baseConfig.particles,
+                    number: { value: 70 },
+                    color: { value: [color, secondary, '#ffffff'] },
+                    shape: { type: "circle" },
+                    size: { value: { min: 1, max: 2 } },
+                    move: {
+                        enable: true,
+                        speed: { min: 10, max: 18 },
+                        direction: "bottom",
+                        outModes: "out",
+                        straight: true
+                    },
+                    opacity: { value: { min: 0.1, max: 0.45 } }
+                }
+            };
+        case 'vinyl':
+            return {
+                ...baseConfig,
+                particles: {
+                    ...baseConfig.particles,
+                    number: { value: 18 },
+                    color: { value: color },
+                    shape: { type: "circle" },
+                    size: { value: { min: 20, max: 110 } },
+                    move: {
+                        enable: true,
+                        speed: 0.3,
+                        direction: "none",
+                        outModes: "bounce",
+                        random: true
+                    },
+                    opacity: { value: { min: 0.02, max: 0.1 }, animation: { enable: true, speed: 1, minimumValue: 0.02 } },
+                    stroke: { width: 1, color: { value: [color, secondary] }, opacity: 0.35 }
+                }
+            };
+        case 'glitch':
+            return {
+                ...baseConfig,
+                particles: {
+                    ...baseConfig.particles,
+                    number: { value: 80 },
+                    color: { value: [color, secondary, '#ffffff', '#ff0044', '#00ffee'] },
+                    shape: { type: "square" },
+                    size: { value: { min: 1, max: 9 } },
+                    move: {
+                        enable: true,
+                        speed: { min: 5, max: 22 },
+                        direction: "none",
+                        outModes: "out",
+                        random: true,
+                        straight: false
+                    },
+                    opacity: { value: { min: 0, max: 0.85 }, animation: { enable: true, speed: 25, minimumValue: 0 } }
                 }
             };
         default:

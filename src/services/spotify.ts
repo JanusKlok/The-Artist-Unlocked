@@ -52,10 +52,10 @@ export const searchTracks = async (clientId: string, clientSecret: string, query
 
     const data = await response.json();
     if (data.tracks && data.tracks.items) {
-        return data.tracks.items.map((item: any) => ({
+        return data.tracks.items.map((item: { uri: string; name: string; artists: { name: string }[]; album: { name: string; images: { url: string }[] } }) => ({
             uri: item.uri,
             name: item.name,
-            artist: item.artists.map((a: any) => a.name).join(', '),
+            artist: item.artists.map((a) => a.name).join(', '),
             album: item.album.name,
             image: item.album.images?.[0]?.url
         }));

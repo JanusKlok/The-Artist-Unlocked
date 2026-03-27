@@ -28,7 +28,7 @@ export const getArtistMbid = async (artistName: string): Promise<string | null> 
         // Return the first exact or best match
         if (data && data.artists && data.artists.length > 0) {
             // Find an exact match if possible, otherwise just use the first one
-            const exactMatch = data.artists.find((a: any) => a.name.toLowerCase() === artistName.toLowerCase());
+            const exactMatch = data.artists.find((a: { name: string; id: string }) => a.name.toLowerCase() === artistName.toLowerCase());
             if (exactMatch) return exactMatch.id;
             return data.artists[0].id;
         }
@@ -70,7 +70,7 @@ export const fetchArtistFanart = async (mbid: string, personalApiKey: string): P
 
         // Get backgrounds
         if (data.artistbackground && data.artistbackground.length > 0) {
-            assets.backgroundUrls = data.artistbackground.slice(0, 5).map((bg: any) => bg.url);
+            assets.backgroundUrls = data.artistbackground.slice(0, 5).map((bg: { url: string }) => bg.url);
         }
 
         return assets;

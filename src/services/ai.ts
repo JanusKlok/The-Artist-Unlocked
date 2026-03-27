@@ -4,9 +4,10 @@ export interface QuizArtist {
     visual_theme: {
         primary_color: string;
         secondary_color: string;
-        animation_type: 'lightning' | 'bubbles' | 'neon_grid' | 'spotlight' | 'equalizers' | 'floating_notes' | 'grunge_static';
-        font_style?: 'heavy' | 'elegant' | 'grunge' | 'retro';
-        background_style?: 'dark' | 'gradient' | 'smoky' | 'grid-overlay';
+        animation_type: 'lightning' | 'bubbles' | 'neon_grid' | 'spotlight' | 'equalizers' | 'floating_notes' | 'grunge_static' | 'embers' | 'galaxy' | 'rain' | 'vinyl' | 'glitch';
+        font_style?: 'heavy' | 'elegant' | 'grunge' | 'retro' | 'hip-hop' | 'handwritten' | 'vaporwave' | 'industrial' | 'lounge' | 'pop' | 'country' | 'funk' | 'techno' | 'latin' | 'reggae' | 'blues' | 'classical' | 'folk' | 'emo' | 'glam' | 'gospel' | 'psychedelic' | 'country-pop' | 'jazz-modern' | 'shoegaze' | 'trap' | 'metal-death' | 'new-wave' | 'opera' | 'indie-pop';
+        background_style?: 'dark' | 'gradient' | 'smoky' | 'grid-overlay' | 'scanlines' | 'diagonal-stripe' | 'vignette-burst' | 'neon-border';
+        text_effect?: 'glow' | 'neon' | 'retro-3d' | 'stamp' | 'none';
     };
     unlock_song: string;
     unlock_song_uri?: string;
@@ -27,9 +28,10 @@ export interface QuizArtist {
     }>;
 }
 
-const VALID_ANIMATION_TYPES = ['lightning', 'bubbles', 'neon_grid', 'spotlight', 'equalizers', 'floating_notes', 'grunge_static'];
-const VALID_FONT_STYLES = ['heavy', 'elegant', 'grunge', 'retro'];
-const VALID_BACKGROUND_STYLES = ['dark', 'gradient', 'smoky', 'grid-overlay'];
+const VALID_ANIMATION_TYPES = ['lightning', 'bubbles', 'neon_grid', 'spotlight', 'equalizers', 'floating_notes', 'grunge_static', 'embers', 'galaxy', 'rain', 'vinyl', 'glitch'];
+const VALID_FONT_STYLES = ['heavy', 'elegant', 'grunge', 'retro', 'hip-hop', 'handwritten', 'vaporwave', 'industrial', 'lounge', 'pop', 'country', 'funk', 'techno', 'latin', 'reggae', 'blues', 'classical', 'folk', 'emo', 'glam', 'gospel', 'psychedelic', 'country-pop', 'jazz-modern', 'shoegaze', 'trap', 'metal-death', 'new-wave', 'opera', 'indie-pop'];
+const VALID_BACKGROUND_STYLES = ['dark', 'gradient', 'smoky', 'grid-overlay', 'scanlines', 'diagonal-stripe', 'vignette-burst', 'neon-border'];
+const VALID_TEXT_EFFECTS = ['glow', 'neon', 'retro-3d', 'stamp', 'none'];
 
 export function validateQuizData(data: unknown): QuizArtist[] {
     if (!Array.isArray(data)) {
@@ -65,6 +67,9 @@ export function validateQuizData(data: unknown): QuizArtist[] {
         }
         if (theme.background_style && !VALID_BACKGROUND_STYLES.includes(theme.background_style as string)) {
             throw new Error(`${label} (${item.artist}): invalid background_style "${theme.background_style}".`);
+        }
+        if (theme.text_effect && !VALID_TEXT_EFFECTS.includes(theme.text_effect as string)) {
+            throw new Error(`${label} (${item.artist}): invalid text_effect "${theme.text_effect}".`);
         }
 
         // Validate unlock_song
@@ -130,15 +135,17 @@ The trivia must follow these rules:
 3. "audio_hint_song" must be a real song by the artist related to the question.
 4. "visual_theme" must fit the genre:
    - "primary_color" and "secondary_color": vivid, saturated hex colors that evoke the artist's genre and aesthetic. Avoid very dark colors (stay above #333). Each artist should feel distinctly different.
-   - "animation_type": one of [lightning, bubbles, neon_grid, spotlight, equalizers, floating_notes, grunge_static]. Pick the one that best matches the genre/vibe.
-   - "font_style": one of [heavy, elegant, grunge, retro]. "heavy" for metal/rock, "elegant" for jazz/soul/classical, "grunge" for punk/alternative/grunge, "retro" for synth/disco/80s.
-   - "background_style": one of [dark, gradient, smoky, grid-overlay]. "dark" for metal/heavy, "gradient" for pop/soul, "smoky" for jazz/blues/psychedelic, "grid-overlay" for electronic/synth/techno.
+   - "animation_type": one of [lightning, bubbles, neon_grid, spotlight, equalizers, floating_notes, grunge_static, embers, galaxy, rain, vinyl, glitch]. Match to genre: lightning=electronic/rock, bubbles=pop/indie, neon_grid=synth/EDM, spotlight=jazz/soul/pop, equalizers=hip-hop/dance, floating_notes=classical/folk, grunge_static=punk/noise, embers=blues/classic-rock/soul, galaxy=ambient/space-rock, rain=shoegaze/post-punk/gothic, vinyl=R&B/disco/soul, glitch=industrial/IDM.
+   - "font_style": one of [heavy, elegant, grunge, retro, hip-hop, handwritten, vaporwave, industrial, lounge, pop, country, funk, techno, latin, reggae, blues, classical, folk, emo, glam, gospel, psychedelic, country-pop, jazz-modern, shoegaze, trap, metal-death, new-wave, opera, indie-pop]. Match to genre: heavy=metal/hard-rock, elegant=jazz/soul, grunge=punk/alternative, retro=8-bit/chiptune, hip-hop=rap/trap, handwritten=indie/singer-songwriter, vaporwave=synthwave/lo-fi, industrial=EBM/noise, lounge=bossa-nova/lounge, pop=bubblegum-pop, country=country/bluegrass, funk=funk/disco/R&B, techno=EDM/house, latin=reggaeton/latin-pop, reggae=reggae/dub, blues=blues/classic-rock, classical=classical/baroque, folk=folk/acoustic/Americana, emo=emo/math-rock, glam=glam-rock/arena-rock, gospel=gospel/spiritual, psychedelic=psychedelic-rock/60s-garage, country-pop=country-pop/beach, jazz-modern=neo-soul/contemporary-jazz, shoegaze=shoegaze/dream-pop, trap=drill/mumble-rap, metal-death=death-metal/black-metal, new-wave=new-wave/post-punk/goth, opera=opera/art-song, indie-pop=bedroom-pop/twee.
+   - "background_style": one of [dark, gradient, smoky, grid-overlay, scanlines, diagonal-stripe, vignette-burst, neon-border]. Match to genre: dark=metal/heavy, gradient=pop/soul, smoky=jazz/blues/psychedelic, grid-overlay=electronic/synth, scanlines=80s/synthwave/retro, diagonal-stripe=punk/ska, vignette-burst=hard-rock/metal, neon-border=EDM/neon-pop.
+   - "text_effect": one of [glow, neon, retro-3d, stamp, none]. Match to genre: glow=electronic/pop, neon=80s/synthwave, retro-3d=hip-hop/funk, stamp=punk/indie/grunge, none=jazz/classical/folk.
 
 CRITICAL VISUAL DISTINCTION RULES:
 Each of the ${count} artists MUST have a completely distinct visual identity. Follow these constraints:
-- NO two artists may share the same "animation_type". Pick ${count} different types from the allowed list.
-- NO two artists may share the same "font_style". Pick ${count} different styles (if ${count} <= 4).
-- NO two artists may share the same "background_style". Pick ${count} different styles (if ${count} <= 4).
+- NO two artists may share the same "animation_type". Pick ${count} different types from the 12 allowed.
+- NO two artists may share the same "font_style". Pick ${count} different styles from the 30 allowed (always different, there are enough options).
+- NO two artists may share the same "background_style". Pick ${count} different styles (if ${count} <= 8).
+- NO two artists may share the same "text_effect". Pick ${count} different effects (if ${count} <= 5).
 - Color palettes must contrast strongly: if one artist uses warm tones (reds/oranges/yellows), the next should use cool tones (blues/greens/purples). Avoid similar hues across artists. Think about the color wheel and maximize distance between each artist's palette.
 - The overall visual feel of each artist should be immediately recognizable and distinct from all others.
 
@@ -153,8 +160,9 @@ JSON Structure (Return an ARRAY of ${count} of these):
     "primary_color": "#HEXCODE",
     "secondary_color": "#HEXCODE",
     "animation_type": "allowed_type",
-    "font_style": "heavy|elegant|grunge|retro",
-    "background_style": "dark|gradient|smoky|grid-overlay"
+    "font_style": "one of the 30 styles",
+    "background_style": "one of the 8 styles",
+    "text_effect": "glow|neon|retro-3d|stamp|none"
   },
   "unlock_song": "Song Title",
   "lore_ladder": [

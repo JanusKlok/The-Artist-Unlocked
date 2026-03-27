@@ -111,7 +111,8 @@ const Dashboard: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
             quizDataRef.current = newState.quizData;
             getApi().broadcastState(newState);
         } else {
-            const { quizData: _qd, ...dynamicState } = newState;
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            const { quizData: _, ...dynamicState } = newState;
             getApi().broadcastState(dynamicState as GameState);
         }
     }, []);
@@ -161,8 +162,8 @@ const Dashboard: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
         }
     };
 
-    const toggleBoard = () => broadcast({ ...gameState, showBoard: !gameState.showBoard });
-    const toggleLeaderboard = () => broadcast({ ...gameState, showLeaderboard: !gameState.showLeaderboard });
+    const toggleBoard = useCallback(() => broadcast({ ...gameState, showBoard: !gameState.showBoard }), [broadcast, gameState]);
+    const toggleLeaderboard = useCallback(() => broadcast({ ...gameState, showLeaderboard: !gameState.showLeaderboard }), [broadcast, gameState]);
 
     const handleNext = useCallback(() => {
         setAnswerPeeked(false);
@@ -195,13 +196,13 @@ const Dashboard: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
         }
     };
 
-    const handleTimerToggle = () => {
+    const handleTimerToggle = useCallback(() => {
         if (gameState.timerEndTime) {
             broadcast({ ...gameState, timerEndTime: null });
         } else {
             broadcast({ ...gameState, timerEndTime: Date.now() + gameState.timerDuration * 1000 });
         }
-    };
+    }, [broadcast, gameState]);
 
     // Keyboard shortcuts
     useEffect(() => {
@@ -245,7 +246,7 @@ const Dashboard: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [gameState, handleNext, handlePrev, handleReveal]);
+    }, [gameState, handleNext, handlePrev, handleReveal, handleTimerToggle, toggleBoard, toggleLeaderboard]);
 
     const currentPoints = gameState.activeTier === 0 ? 10 : (gameState.quizData[gameState.activeArtistIndex]?.lore_ladder?.[gameState.activeTier - 1]?.points || 10);
     const isFinalQuestion = gameState.activeArtistIndex === gameState.quizData.length - 1 && gameState.activeTier === 5;

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { buildTriviaPrompt, validateQuizData } from '../services/ai';
 import type { QuizArtist } from '../services/ai';
+import type { AppConfig, SavedQuiz } from '../types/electron';
 import { searchTracks, type SpotifyTrack } from '../services/spotify';
 import { AI_PROVIDERS, PROVIDER_LABELS, type AiProvider } from '../types/ai';
 
@@ -25,8 +26,8 @@ const getApi = () => window.electronAPI || {
     saveQuiz: async () => true,
     getQuizzes: async () => [],
     deleteQuiz: async () => true,
-    fetchMbid: async (_artist: string) => null,
-    fetchFanart: async (_mbid: string, _id: number) => null,
+    fetchMbid: async () => null,
+    fetchFanart: async () => null,
     setConfig: async () => true,
     openSpotify: async () => {},
     broadcastState: () => {},
@@ -40,13 +41,13 @@ const getApi = () => window.electronAPI || {
 
 const Builder: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
     const navigate = useNavigate();
-    const [config, setConfig] = useState<any>(null);
+    const [config, setConfig] = useState<AppConfig | null>(null);
     const [artists, setArtists] = useState<string[]>(['', '', '', '', '']);
     const [difficulty, setDifficulty] = useState<string>('Fan');
     const [isGenerating, setIsGenerating] = useState(false);
     const [quizData, setQuizData] = useState<QuizArtist[]>([]);
     const [quizName, setQuizName] = useState(`My Awesome Quiz - ${new Date().toLocaleDateString()}`);
-    const [savedQuizzes, setSavedQuizzes] = useState<any[]>([]);
+    const [savedQuizzes, setSavedQuizzes] = useState<SavedQuiz[]>([]);
     const [editingQuizId, setEditingQuizId] = useState<number | null>(null);
     const [saveMessage, setSaveMessage] = useState('');
 
@@ -70,7 +71,7 @@ const Builder: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
     const [selectedProvider, setSelectedProvider] = useState<AiProvider>('gemini');
 
     // States for incremental progress
-    const [_currentGeneratingIdx, setCurrentGeneratingIdx] = useState<number>(-1);
+    const [, setCurrentGeneratingIdx] = useState<number>(-1);
     const [statusText, setStatusText] = useState('');
     const [currentError, setCurrentError] = useState<string | null>(null);
 
@@ -116,13 +117,13 @@ const Builder: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
         try {
             const results = await searchTracks(config.spotifyClientId, config.spotifyClientSecret, query);
             setSearchModal(prev => ({ ...prev, results, isSearching: false }));
-        } catch (e: any) {
-            alert(e.message);
+        } catch (e: unknown) {
+            alert(e instanceof Error ? e.message : String(e));
             setSearchModal(prev => ({ ...prev, isSearching: false }));
         }
     };
 
-    const loadQuizForEditing = (quiz: any) => {
+    const loadQuizForEditing = (quiz: SavedQuiz) => {
         setEditingQuizId(quiz.id);
         setQuizName(quiz.name);
         setQuizData(quiz.data);
@@ -237,9 +238,9 @@ const Builder: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
 
                 setQuizData(prev => [...prev, res]);
             }
-        } catch (e: any) {
+        } catch (e: unknown) {
             console.error(e);
-            setCurrentError(`Generation failed: ${e.message}`);
+            setCurrentError(`Generation failed: ${e instanceof Error ? e.message : String(e)}`);
         } finally {
             setIsGenerating(false);
         }
