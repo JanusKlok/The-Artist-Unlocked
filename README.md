@@ -35,6 +35,7 @@ Whether you're hosting a casual night with friends or a competitive superfan sho
 ### Prerequisites
 
 - **Node.js** (v18.x or higher)
+- **pnpm** (v10.x or higher) — install via `pnpm install -g pnpm` or see [pnpm.io](https://pnpm.io/installation)
 - **Google Gemini API Key** (Get one from [Google AI Studio](https://aistudio.google.com/))
 - **Spotify Developer Credentials** (Create an app at [Spotify Developer Dashboard](https://developer.spotify.com/dashboard))
 
@@ -48,12 +49,12 @@ Whether you're hosting a casual night with friends or a competitive superfan sho
 
 2. **Install dependencies:**
    ```bash
-   npm install
+   pnpm install
    ```
 
 3. **Run in development mode:**
    ```bash
-   npm run dev
+   pnpm dev
    ```
 
 4. **Configure your keys:**
@@ -64,7 +65,7 @@ Whether you're hosting a casual night with friends or a competitive superfan sho
 To package the application for your OS (Windows, macOS, or Linux):
 
 ```bash
-npm run build
+pnpm build
 # Then use electron-builder (ensure configuration in package.json)
 npx electron-builder
 ```

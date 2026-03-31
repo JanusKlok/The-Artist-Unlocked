@@ -22,9 +22,9 @@ First off, thank you for considering contributing to **The Artist Unlocked**! It
 
 ## 🛠️ Local Development
 
-1. Install dependencies: `npm install`
-2. Run in dev mode: `npm run dev`
-3. Run linting: `npm run lint`
+1. Install dependencies: `pnpm install`
+2. Run in dev mode: `pnpm dev`
+3. Run linting: `pnpm lint`
 
 ## ⚖️ License
 By contributing, you agree that your contributions will be licensed under the project's [MIT License](LICENSE).
