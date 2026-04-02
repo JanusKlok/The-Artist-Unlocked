@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>The Artist Unlocked — Player</title>
+    <script src="https://cdn.socket.io/4.8.3/socket.io.min.js" crossorigin="anonymous"></script>
+    <script>
+        if (typeof io === 'undefined') {
+            document.write('<script src="/socket.io/socket.io.js"><\/script>');
+        }
+    </script>
+    <style>
+        :root {
+            --primary: #00E5FF;
+            --secondary: #f39c12;
+            --danger: #ff4444;
+            --success: #1db954;
+            --gold: #FFD700;
+            --bg: #121212;
+            --card-bg: #1e1e1e;
+            --text: #ffffff;
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+        }
+        .screen {
+            display: none;
+            flex-direction: column;
+            min-height: 100vh;
+            padding: 1.5rem 1rem;
+            gap: 1rem;
+        }
+        .screen.active { display: flex; }
+        h1 { margin: 0 0 0.5rem; font-size: 1.8rem; color: var(--primary); }
+        h2 { margin: 0 0 0.5rem; font-size: 1.3rem; }
+        p { margin: 0 0 0.5rem; color: rgba(255,255,255,0.7); }
+        .card {
+            background: var(--card-bg);
+            border-radius: 12px;
+            padding: 1rem;
+            border-left: 4px solid var(--primary);
+        }
+        button {
+            background: #333;
+            color: white;
+            border: none;
+            padding: 0.9rem 1.2rem;
+            border-radius: 10px;
+            font-size: 1rem;
+            font-weight: bold;
+            cursor: pointer;
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            transition: background 0.15s, transform 0.1s;
+        }
+        button:active { transform: scale(0.97); }
+        button.primary { background: var(--primary); color: #000; }
+        button.danger { background: var(--danger); color: #fff; }
+        button.success { background: var(--success); color: #fff; }
+        button.gold { background: var(--gold); color: #000; }
+        button:disabled { opacity: 0.3; cursor: not-allowed; }
+        input[type="text"], textarea, input[type="number"] {
+            background: #2a2a2a;
+            border: 2px solid #444;
+            border-radius: 10px;
+            color: #fff;
+            padding: 0.8rem;
+            font-size: 1rem;
+            width: 100%;
+            font-family: inherit;
+            transition: border-color 0.2s;
+        }
+        input[type="text"]:focus, textarea:focus, input[type="number"]:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+        textarea { resize: none; }
+        .error-text { color: var(--danger); font-size: 0.9rem; margin-top: 0.25rem; }
+        .status-text { color: rgba(255,255,255,0.5); font-size: 0.85rem; text-align: center; }
+        .locked-status { color: var(--success); font-weight: bold; }
+
+        /* Timer */
+        .timer-bar {
+            background: #1a1a1a;
+            border-radius: 10px;
+            padding: 0.75rem 1rem;
+            text-align: center;
+            font-size: 1.5rem;
+            font-weight: bold;
+            letter-spacing: 2px;
+            color: var(--primary);
+            transition: color 0.3s;
+        }
+        .timer-bar.urgent { color: var(--danger); }
+        .timer-bar.hidden { display: none; }
+
+        /* Phase info */
+        .phase-info {
+            background: #1a1a1a;
+            border-radius: 8px;
+            padding: 0.5rem 1rem;
+            font-size: 0.85rem;
+            color: rgba(255,255,255,0.5);
+            text-align: center;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        /* Leaderboard */
+        .leaderboard { display: flex; flex-direction: column; gap: 0.5rem; }
+        .lb-row {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            background: #2a2a2a;
+            border-radius: 8px;
+            padding: 0.6rem 1rem;
+        }
+        .lb-rank { font-size: 1.1rem; font-weight: bold; color: rgba(255,255,255,0.5); min-width: 1.5rem; }
+        .lb-rank.gold { color: var(--gold); }
+        .lb-rank.silver { color: #C0C0C0; }
+        .lb-rank.bronze { color: #CD7F32; }
+        .lb-name { flex: 1; font-weight: bold; }
+        .lb-score { color: var(--primary); font-weight: bold; }
+        .lb-row.me { border-left: 3px solid var(--primary); }
+
+        /* Lobby teams */
+        .lobby-teams { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem; }
+        .lobby-chip {
+            background: rgba(0, 229, 255, 0.15);
+            border: 1px solid rgba(0, 229, 255, 0.3);
+            padding: 0.4rem 1rem;
+            border-radius: 50px;
+            font-size: 0.9rem;
+        }
+
+        /* Game over */
+        .winner-banner {
+            text-align: center;
+            padding: 2rem 1rem;
+        }
+        .trophy { font-size: 5rem; }
+        .winner-title { font-size: 2.5rem; font-weight: bold; color: var(--gold); margin: 0.5rem 0; }
+        .rank-display { font-size: 1.5rem; color: rgba(255,255,255,0.7); }
+
+        /* Overlays */
+        .overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.95);
+            z-index: 200;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 2rem;
+            gap: 1rem;
+        }
+        .overlay.visible { display: flex; }
+        .overlay h2 { color: var(--danger); font-size: 1.5rem; margin: 0; }
+        .overlay p { color: rgba(255,255,255,0.7); }
+    </style>
+</head>
+<body>
+
+<!-- Screen: Create Team -->
+<div id="screen-create-team" class="screen">
+    <h1>Join the Game!</h1>
+    <p>Enter your team name to join the quiz.</p>
+    <div class="card" style="border-left-color: var(--secondary);">
+        <input type="text" id="team-name-input" maxlength="50" placeholder="Enter your team name..." autocomplete="off" />
+        <div id="create-error" class="error-text"></div>
+    </div>
+    <button class="primary" id="btn-create-team">Create Team</button>
+</div>
+
+<!-- Screen: Lobby -->
+<div id="screen-lobby" class="screen">
+    <h1 id="lobby-welcome">Welcome!</h1>
+    <p>Waiting for the quizmaster to start the game...</p>
+    <div class="card">
+        <span style="font-size: 0.75rem; color: #888; text-transform: uppercase; display: block; margin-bottom: 0.5rem;">Teams Joined</span>
+        <div id="lobby-teams" class="lobby-teams"></div>
+    </div>
+</div>
+
+<!-- Screen: Answering -->
+<div id="screen-answering" class="screen">
+    <div id="phase-info" class="phase-info"></div>
+    <div id="timer-bar" class="timer-bar hidden">--:--</div>
+    <div class="card" style="border-left-color: var(--secondary);">
+        <span style="font-size: 0.75rem; color: #888; text-transform: uppercase; display: block; margin-bottom: 0.5rem;">Your Answer</span>
+        <textarea id="answer-input" rows="3" placeholder="Type your answer..."></textarea>
+    </div>
+    <div id="answer-status" class="status-text"></div>
+    <button class="success" id="btn-lock-in">🔒 Lock In</button>
+    <button class="danger" id="btn-unlock" style="display:none;">✏️ Unlock &amp; Edit</button>
+    <button class="gold" id="btn-all-in" style="display:none;">⚡ Use All-In Token (2× Points)</button>
+</div>
+
+<!-- Screen: Waiting -->
+<div id="screen-waiting" class="screen">
+    <h1>Sit tight!</h1>
+    <p>Watch the screen for the answer!</p>
+    <h2 style="color: rgba(255,255,255,0.5); font-size: 1rem; text-transform: uppercase; letter-spacing: 1px;">Leaderboard</h2>
+    <div id="waiting-leaderboard" class="leaderboard"></div>
+</div>
+
+<!-- Screen: Wager -->
+<div id="screen-wager" class="screen">
+    <h1>Final Wager!</h1>
+    <div class="card">
+        <div id="wager-score-display" style="font-size: 1.2rem; margin-bottom: 0.5rem;"></div>
+        <label style="font-size: 0.8rem; color: #888; text-transform: uppercase;">Your Wager</label>
+        <input type="number" id="wager-input" min="0" value="0" />
+    </div>
+    <div id="wager-status" class="status-text"></div>
+    <button class="primary" id="btn-submit-wager">Submit Wager</button>
+</div>
+
+<!-- Screen: Game Over -->
+<div id="screen-gameover" class="screen">
+    <div id="gameover-winner" class="winner-banner" style="display:none;">
+        <div class="trophy">🏆</div>
+        <div class="winner-title">YOU WON!</div>
+        <div id="gameover-score" style="font-size: 1.2rem; color: rgba(255,255,255,0.7);"></div>
+    </div>
+    <div id="gameover-other" style="display:none; text-align: center; padding: 1rem 0;">
+        <div style="font-size: 2rem; font-weight: bold;">Game Over!</div>
+        <div id="gameover-rank" class="rank-display"></div>
+        <div id="gameover-score-other" style="font-size: 1.2rem; color: rgba(255,255,255,0.7); margin-top: 0.5rem;"></div>
+    </div>
+    <h2 style="color: rgba(255,255,255,0.5); font-size: 1rem; text-transform: uppercase; letter-spacing: 1px;">Final Leaderboard</h2>
+    <div id="gameover-leaderboard" class="leaderboard"></div>
+</div>
+
+<!-- Auth Error Overlay -->
+<div id="auth-error" class="overlay">
+    <h2>Session Expired</h2>
+    <p>Please scan the QR code on the screen again to rejoin.</p>
+</div>
+
+<!-- Kicked Overlay -->
+<div id="kicked-overlay" class="overlay">
+    <h2>Removed from Game</h2>
+    <p>You have been removed from the game by the quizmaster.</p>
+</div>
+
+<!-- Session Replaced Overlay -->
+<div id="session-replaced" class="overlay">
+    <h2>Session Replaced</h2>
+    <p>Another device has taken over your team's session.</p>
+</div>
+
+<script>
+    const SCREENS = ['create-team', 'lobby', 'answering', 'waiting', 'wager', 'gameover'];
+    let currentScreen = null;
+
+    function showScreen(name) {
+        SCREENS.forEach(s => {
+            const el = document.getElementById('screen-' + s);
+            if (el) el.style.display = (s === name) ? 'flex' : 'none';
+        });
+        currentScreen = name;
+    }
+
+    function showOverlay(id) {
+        const el = document.getElementById(id);
+        if (el) el.classList.add('visible');
+    }
+
+    function showAuthError() {
+        showOverlay('auth-error');
+    }
+
+    // --- Auth & Session ---
+    const urlParams = new URLSearchParams(window.location.search);
+    const authGuid = urlParams.get('auth');
+    const rejoinTokenParam = urlParams.get('rejoin');
+    let sessionToken = localStorage.getItem('player-session-token');
+    let myTeamName = localStorage.getItem('player-team-name');
+
+    async function initSession() {
+        // Always fetch a fresh session token from the server so it's
+        // registered in approvedPlayerSessionTokens. Preserve the team
+        // name from localStorage so we can rejoin automatically.
+        const params = new URLSearchParams();
+        if (authGuid) params.set('auth', authGuid);
+        if (rejoinTokenParam) params.set('rejoin', rejoinTokenParam);
+
+        try {
+            const resp = await fetch('/api/player-session?' + params.toString());
+            if (!resp.ok) { showAuthError(); return; }
+            const data = await resp.json();
+            sessionToken = data.sessionToken;
+            localStorage.setItem('player-session-token', sessionToken);
+            if (data.rejoinTeamName) {
+                myTeamName = data.rejoinTeamName;
+                localStorage.setItem('player-team-name', myTeamName);
+            }
+            connectSocket();
+        } catch (e) {
+            showAuthError();
+        }
+    }
+
+    // --- Socket ---
+    let socket = null;
+
+    function connectSocket() {
+        socket = io('/player', {
+            query: { session: sessionToken },
+            transports: ['polling', 'websocket'],
+            reconnection: true,
+            reconnectionAttempts: Infinity,
+            reconnectionDelay: 1000,
+            reconnectionDelayMax: 5000,
+        });
+
+        socket.on('connect', () => {
+            if (myTeamName) {
+                if (rejoinTokenParam) {
+                    socket.emit('rejoin-with-token', { rejoinToken: rejoinTokenParam }, handleRejoinResponse);
+                } else {
+                    socket.emit('rejoin-team', { teamName: myTeamName }, handleRejoinResponse);
+                }
+            } else {
+                showScreen('create-team');
+            }
+        });
+
+        socket.on('player-session-token', (token) => {
+            sessionToken = token;
+            localStorage.setItem('player-session-token', token);
+            socket.io.opts.query = { session: token };
+        });
+
+        socket.on('player-view-update', handleViewUpdate);
+        socket.on('kicked', () => showOverlay('kicked-overlay'));
+        socket.on('session-replaced', () => showOverlay('session-replaced'));
+        socket.on('connect_error', (err) => {
+            if (err.message === 'AUTH_FAILED') showAuthError();
+        });
+    }
+
+    function handleRejoinResponse(response) {
+        if (response.error) {
+            localStorage.removeItem('player-session-token');
+            localStorage.removeItem('player-team-name');
+            myTeamName = null;
+            showScreen('create-team');
+            return;
+        }
+        myTeamName = response.teamName;
+        localStorage.setItem('player-team-name', myTeamName);
+        // Screen switches when player-view-update arrives
+    }
+
+    // --- Team Creation ---
+    document.getElementById('btn-create-team').onclick = () => {
+        const name = document.getElementById('team-name-input').value.trim();
+        if (!name) return;
+        document.getElementById('create-error').textContent = '';
+        document.getElementById('btn-create-team').disabled = true;
+
+        socket.emit('create-team', { teamName: name }, (response) => {
+            document.getElementById('btn-create-team').disabled = false;
+            if (response.error) {
+                document.getElementById('create-error').textContent = response.error;
+                return;
+            }
+            myTeamName = response.teamName;
+            localStorage.setItem('player-team-name', myTeamName);
+        });
+    };
+
+    // Allow pressing Enter in team name field
+    document.getElementById('team-name-input').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') document.getElementById('btn-create-team').click();
+    });
+
+    // --- Answer Submission ---
+    document.getElementById('btn-lock-in').onclick = () => {
+        const answer = document.getElementById('answer-input').value.trim();
+        if (!answer) return;
+        socket.emit('submit-answer', { answer, lockedIn: true });
+    };
+
+    document.getElementById('btn-unlock').onclick = () => {
+        const answer = document.getElementById('answer-input').value.trim();
+        socket.emit('submit-answer', { answer, lockedIn: false });
+    };
+
+    // --- All-In ---
+    document.getElementById('btn-all-in').onclick = () => {
+        if (!confirm('Are you sure? This is permanent and can only be used once!\nAll-In doubles positive points for this question.')) return;
+        socket.emit('activate-all-in', undefined, (response) => {
+            if (response && response.error) alert(response.error);
+        });
+    };
+
+    // --- Wager ---
+    document.getElementById('btn-submit-wager').onclick = () => {
+        const wager = parseInt(document.getElementById('wager-input').value) || 0;
+        socket.emit('submit-wager', { wager });
+        document.getElementById('wager-status').textContent = 'Wager submitted: ' + wager + ' points';
+    };
+
+    // --- Timer ---
+    let timerInterval = null;
+
+    function updateTimer(state) {
+        const bar = document.getElementById('timer-bar');
+        if (!state.timerEndTime) {
+            if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+            bar.classList.add('hidden');
+            return;
+        }
+        bar.classList.remove('hidden');
+
+        if (timerInterval) clearInterval(timerInterval);
+        timerInterval = setInterval(() => {
+            const remaining = Math.max(0, state.timerEndTime - Date.now());
+            const secs = Math.ceil(remaining / 1000);
+            const mm = String(Math.floor(secs / 60)).padStart(2, '0');
+            const ss = String(secs % 60).padStart(2, '0');
+            bar.textContent = remaining === 0 ? "TIME'S UP" : `${mm}:${ss}`;
+            bar.classList.toggle('urgent', secs <= 10);
+            if (remaining === 0) { clearInterval(timerInterval); timerInterval = null; }
+        }, 200);
+    }
+
+    // --- Screen Update Functions ---
+    function updateAnsweringScreen(state) {
+        const phaseEl = document.getElementById('phase-info');
+        if (state.tier === 0) {
+            phaseEl.textContent = `Artist ${state.artistIndex + 1}/${state.totalArtists} — Identify the Artist`;
+        } else {
+            phaseEl.textContent = `Artist ${state.artistIndex + 1}/${state.totalArtists} — Tier ${state.tier}`;
+        }
+
+        const answerInput = document.getElementById('answer-input');
+        if (answerInput.value !== state.currentAnswer && state.currentAnswer !== undefined) {
+            answerInput.value = state.currentAnswer;
+        }
+        answerInput.readOnly = state.currentLockedIn;
+        answerInput.style.opacity = state.currentLockedIn ? '0.7' : '1';
+
+        const lockBtn = document.getElementById('btn-lock-in');
+        const unlockBtn = document.getElementById('btn-unlock');
+        lockBtn.style.display = state.currentLockedIn ? 'none' : 'flex';
+        unlockBtn.style.display = state.currentLockedIn ? 'flex' : 'none';
+
+        const statusEl = document.getElementById('answer-status');
+        if (state.currentLockedIn) {
+            statusEl.innerHTML = '<span class="locked-status">✅ Locked In!</span>';
+        } else if (state.currentAnswer) {
+            statusEl.textContent = 'Answer saved — not locked in yet.';
+        } else {
+            statusEl.textContent = 'Not locked in yet.';
+        }
+
+        const allInBtn = document.getElementById('btn-all-in');
+        allInBtn.style.display = state.allInAvailable ? 'flex' : 'none';
+    }
+
+    function updateWaitingScreen(state) {
+        renderLeaderboard('waiting-leaderboard', state.leaderboard, state.teamName);
+    }
+
+    function updateWagerScreen(state) {
+        const scoreEl = document.getElementById('wager-score-display');
+        scoreEl.textContent = `Your score: ${state.teamScore} — Maximum wager: ${state.maxWager}`;
+        const input = document.getElementById('wager-input');
+        input.max = state.maxWager;
+        if (state.wagersLocked) {
+            input.disabled = true;
+            document.getElementById('btn-submit-wager').disabled = true;
+            document.getElementById('wager-status').textContent = 'Wagers are locked.';
+        }
+        if (state.currentWager !== null) {
+            document.getElementById('wager-status').textContent = `Wager submitted: ${state.currentWager} points`;
+        }
+    }
+
+    function updateGameoverScreen(state) {
+        const winnerEl = document.getElementById('gameover-winner');
+        const otherEl = document.getElementById('gameover-other');
+
+        if (state.isWinner) {
+            winnerEl.style.display = 'block';
+            otherEl.style.display = 'none';
+            document.getElementById('gameover-score').textContent = `Final Score: ${state.teamScore} points`;
+        } else {
+            winnerEl.style.display = 'none';
+            otherEl.style.display = 'block';
+            document.getElementById('gameover-rank').textContent = `Your Rank: #${state.rank}`;
+            document.getElementById('gameover-score-other').textContent = `Final Score: ${state.teamScore} points`;
+        }
+        renderLeaderboard('gameover-leaderboard', state.leaderboard, state.teamName);
+    }
+
+    function updateLobbyScreen(state) {
+        document.getElementById('lobby-welcome').textContent = `Welcome, ${state.teamName}!`;
+        const teamsEl = document.getElementById('lobby-teams');
+        teamsEl.innerHTML = state.leaderboard
+            .map(t => `<div class="lobby-chip">${escapeHtml(t.name)}</div>`)
+            .join('');
+    }
+
+    function renderLeaderboard(containerId, leaderboard, myName) {
+        const el = document.getElementById(containerId);
+        const rankClass = (i) => i === 0 ? 'gold' : i === 1 ? 'silver' : i === 2 ? 'bronze' : '';
+        el.innerHTML = leaderboard.map((t, i) => `
+            <div class="lb-row${t.name === myName ? ' me' : ''}">
+                <span class="lb-rank ${rankClass(i)}">#${i + 1}</span>
+                <span class="lb-name">${escapeHtml(t.name)}${t.name === myName ? ' (you)' : ''}</span>
+                <span class="lb-score">${t.score}</span>
+            </div>
+        `).join('');
+    }
+
+    function escapeHtml(str) {
+        return String(str)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
+    // --- Main View Update Handler ---
+    function handleViewUpdate(state) {
+        if (!myTeamName) return;
+
+        updateTimer(state);
+
+        if (state.phase === 'answering') updateAnsweringScreen(state);
+        if (state.phase === 'waiting') updateWaitingScreen(state);
+        if (state.phase === 'wager') updateWagerScreen(state);
+        if (state.phase === 'gameover') updateGameoverScreen(state);
+        if (state.phase === 'lobby') updateLobbyScreen(state);
+
+        showScreen(state.phase);
+    }
+
+    // --- Init ---
+    initSession();
+</script>
+</body>
+</html>

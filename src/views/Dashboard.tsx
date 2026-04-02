@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import type { QuizArtist } from '../services/ai';
-import { calculatePoints, getNextState, getPrevState, INITIAL_GAME_STATE, type GameState, type SavedTeam } from '../utils/gameLogic';
+import { calculatePoints, getNextState, getPrevState, INITIAL_GAME_STATE, type GameState, type SavedTeam, type TeamAnswer } from '../utils/gameLogic';
 import type { SavedQuiz, AppConfig } from '../types/electron';
 import QRCode from 'qrcode';
 import { v4 as uuidv4 } from 'uuid';
@@ -24,6 +24,14 @@ const getApi = () => {
         fetchMbid: async () => null,
         fetchFanart: async () => null,
         onStateUpdate: () => {},
+        onMobileConnected: () => {},
+        generatePlayerGuid: async () => '',
+        getPlayerTeams: async () => [],
+        generateRejoinQr: async () => ({ teamName: '', rejoinToken: '', url: '' }),
+        removePlayerTeam: async () => true,
+        onPlayerAnswersUpdated: () => {},
+        onPlayerTeamJoined: () => {},
+        onTeamLockinStatus: () => {},
     };
 };
 
@@ -42,10 +50,16 @@ const Dashboard: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
     const [showWagerModal, setShowWagerModal] = useState(false);
     const [remoteGuid, setRemoteGuid] = useState(uuidv4());
     const [qrDataUrl, setQrDataUrl] = useState('');
+    const [mobileConnected, setMobileConnected] = useState(false);
 
     const [gameState, setGameState] = useState<GameState>(INITIAL_GAME_STATE);
     const [remoteIp, setRemoteIp] = useState('');
     const quizDataRef = useRef<QuizArtist[]>([]);
+    const [playerGuid, setPlayerGuid] = useState('');
+    const [playerAnswers, setPlayerAnswers] = useState<TeamAnswer[]>([]);
+    const [showRejoinModal, setShowRejoinModal] = useState(false);
+    const [rejoinQrData, setRejoinQrData] = useState<{ teamName: string; url: string; qrDataUrl: string } | null>(null);
+    const [showQuizmasterQr, setShowQuizmasterQr] = useState(false);
 
     useEffect(() => {
         getApi().getQuizzes().then(setSavedQuizzes);
@@ -60,6 +74,8 @@ const Dashboard: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
                 });
             }
         });
+
+        getApi().onMobileConnected?.(() => { setMobileConnected(true); setShowQuizmasterQr(false); });
 
         getApi().onStateUpdate?.((newState: GameState) => {
             if (newState.quizData && newState.quizData.length > 0) {
@@ -82,19 +98,34 @@ const Dashboard: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
             .catch(console.error);
     }, [remoteIp, remoteGuid]);
 
-    // GUID Rotation logic
+    // Listen for player answer updates and team joins
     useEffect(() => {
-        if (!remoteIp) return;
+        getApi().onPlayerAnswersUpdated?.((data) => {
+            setPlayerAnswers(data.answers);
+        });
+        getApi().onPlayerTeamJoined?.(() => {
+            // Team list updates come through state-updated from the server
+        });
+    }, []);
+
+    // Rotate QR code GUID every 60s while QR is visible (no mobile connected yet)
+    useEffect(() => {
+        if (!remoteIp || mobileConnected) return;
         const interval = setInterval(() => {
             const newGuid = uuidv4();
             setRemoteGuid(newGuid);
             getApi().updateRemoteGuid(newGuid);
-            if (gameState.quizData.length > 0) {
-                getApi().broadcastState(gameState);
-            }
         }, 60000);
         return () => clearInterval(interval);
-    }, [remoteIp, gameState]);
+    }, [remoteIp, mobileConnected]);
+
+    const showNewQrCode = () => {
+        setMobileConnected(false);
+        setShowQuizmasterQr(true);
+        const newGuid = uuidv4();
+        setRemoteGuid(newGuid);
+        getApi().updateRemoteGuid(newGuid);
+    };
 
     // Persist team roster to localStorage
     useEffect(() => {
@@ -134,6 +165,15 @@ const Dashboard: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
 
     const hostQuiz = async (quizData: QuizArtist[]) => {
         const cfg = await getApi().getConfig();
+        // Auto-start server if not already running
+        let ip = remoteIp;
+        if (!ip) {
+            ip = await getApi().startRemoteServer(remoteGuid);
+            setRemoteIp(ip);
+        }
+        const guid = await getApi().generatePlayerGuid();
+        setPlayerGuid(guid);
+        const playerQrUrl = `http://${ip}:3001/play?auth=${guid}`;
         broadcast({
             ...INITIAL_GAME_STATE,
             quizData,
@@ -141,6 +181,10 @@ const Dashboard: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
             timerDuration: gameState.timerDuration,
             timerAutoStart: gameState.timerAutoStart,
             spotifyMobileMode: (cfg?.spotifyMobileMode || 'desktop') as GameState['spotifyMobileMode'],
+            lobbyMode: true,
+            showPlayerQr: false,
+            teamsLocked: false,
+            playerQrUrl,
         });
     };
 
@@ -209,6 +253,23 @@ const Dashboard: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
         broadcast({ ...gameState, showAnswer: true });
     }, [gameState, broadcast]);
 
+    const handleShowPlayerQr = async () => {
+        let guid = playerGuid;
+        if (!guid) {
+            guid = await getApi().generatePlayerGuid();
+            setPlayerGuid(guid);
+        }
+        const url = `http://${remoteIp}:3001/play?auth=${guid}`;
+        broadcast({ ...gameState, showPlayerQr: !gameState.showPlayerQr, playerQrUrl: url });
+    };
+
+    const handleGenerateRejoinQr = async (teamName: string) => {
+        const result = await getApi().generateRejoinQr(teamName);
+        const qrDataUrl = await QRCode.toDataURL(result.url, { width: 400, margin: 2 });
+        setRejoinQrData({ teamName: result.teamName, url: result.url, qrDataUrl });
+        setShowRejoinModal(true);
+    };
+
     const handleStopHosting = () => {
         if (window.confirm('Are you sure you want to stop hosting? Current progress will be lost.')) {
             broadcast({ ...gameState, quizData: [] });
@@ -222,6 +283,10 @@ const Dashboard: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
         }
     };
 
+    const handleStartQuiz = useCallback(() => {
+        broadcast({ ...gameState, lobbyMode: false, teamsLocked: true, showPlayerQr: false });
+    }, [gameState, broadcast]);
+
     const handleTimerToggle = useCallback(() => {
         if (gameState.timerEndTime) {
             broadcast({ ...gameState, timerEndTime: null });
@@ -232,7 +297,7 @@ const Dashboard: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
 
     // Keyboard shortcuts
     useEffect(() => {
-        if (!gameState.quizData.length) return;
+        if (!gameState.quizData.length || gameState.lobbyMode) return;
 
         const handleKeyDown = (e: KeyboardEvent) => {
             // Don't trigger shortcuts when typing in inputs
@@ -337,85 +402,118 @@ const Dashboard: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
                 ) : (
                     <div className="game-grid">
                         <div>
-                            <h2 className="section-title">Remote Control</h2>
+                            <h2 className="section-title">Quizmaster Remote</h2>
                             <div className="control-panel">
-                                {remoteIp ? (
+                                {mobileConnected ? (
+                                    <div className="remote-info">
+                                        <p className="status">✅ Mobile Remote Connected!</p>
+                                        <button className="btn-sm btn-nav" onClick={showNewQrCode}>Show New QR Code</button>
+                                    </div>
+                                ) : showQuizmasterQr && qrDataUrl ? (
                                     <div className="remote-panel">
-                                        {qrDataUrl && <img src={qrDataUrl} alt="QR Code" />}
+                                        <img src={qrDataUrl} alt="QR Code" />
                                         <div className="remote-info">
-                                            <p className="status">✅ Remote Server Running!</p>
-                                            <p className="url">Key refreshes every minute for security.</p>
+                                            <p className="status">Scan QR code to connect.</p>
+                                            <button className="btn-sm btn-nav" onClick={() => setShowQuizmasterQr(false)}>Hide QR Code</button>
                                         </div>
                                     </div>
                                 ) : (
-                                    <button className="btn-lg btn-success" onClick={handleStartRemote}>Start Mobile Remote</button>
+                                    <button className="btn-md btn-nav" onClick={async () => {
+                                        if (!remoteIp) await handleStartRemote();
+                                        setShowQuizmasterQr(true);
+                                    }}>Show QR Code</button>
                                 )}
                             </div>
 
+                            {remoteIp && gameState.lobbyMode && (
+                                <>
+                                    <h2 className="section-title">Player Join</h2>
+                                    <div className="control-panel">
+                                        <button
+                                            className={`btn-md ${gameState.showPlayerQr ? 'btn-danger' : 'btn-success'}`}
+                                            onClick={handleShowPlayerQr}
+                                        >
+                                            {gameState.showPlayerQr ? 'Hide Player QR on Screen' : 'Show Player QR on Screen'}
+                                        </button>
+                                    </div>
+                                </>
+                            )}
+
                             <h2 className="section-title">Game Flow</h2>
                             <div className="control-panel">
-                                <div className="flow-buttons">
-                                    <button className="btn-md btn-nav" onClick={handlePrev} disabled={gameState.activeArtistIndex === 0 && gameState.activeTier === 0}>⬅ Previous</button>
-                                    <button className={`btn-md btn-primary ${isLastStepBeforeFinish ? 'btn-finish' : ''}`} onClick={handleNext}>
-                                        {isLastStepBeforeFinish ? '🏁 Finish Quiz' : 'Next ➡'}
-                                    </button>
-                                </div>
-
-                                <div className="action-buttons">
-                                    <div className="action-row">
-                                        <button
-                                            className="btn-md btn-reveal"
-                                            onClick={handleReveal}
-                                            disabled={gameState.showAnswer}
-                                        >
-                                            👁 Reveal Answer
-                                        </button>
-                                        <button className="btn-md btn-board" onClick={toggleBoard}>
-                                            {gameState.showBoard ? '❌ Hide Board' : '📋 Show Board'}
+                                {gameState.lobbyMode ? (
+                                    <div style={{ textAlign: 'center', padding: '1rem 0' }}>
+                                        <p style={{ color: '#aaa', marginBottom: '1rem' }}>Teams are joining — start when ready</p>
+                                        <button className="btn-lg btn-primary" onClick={handleStartQuiz} style={{ width: '100%', fontSize: '1.2rem', padding: '1rem' }}>
+                                            Start Quiz
                                         </button>
                                     </div>
-                                    {isFinalQuestion && (
-                                        <button className="btn-md btn-wager" onClick={() => setShowWagerModal(true)}>
-                                            💰 Manage Final Wagers
-                                        </button>
-                                    )}
-                                </div>
+                                ) : (
+                                    <>
+                                        <div className="flow-buttons">
+                                            <button className="btn-md btn-nav" onClick={handlePrev} disabled={gameState.activeArtistIndex === 0 && gameState.activeTier === 0}>⬅ Previous</button>
+                                            <button className={`btn-md btn-primary ${isLastStepBeforeFinish ? 'btn-finish' : ''}`} onClick={handleNext}>
+                                                {isLastStepBeforeFinish ? '🏁 Finish Quiz' : 'Next ➡'}
+                                            </button>
+                                        </div>
 
-                                {/* Timer Controls */}
-                                <div className="timer-controls">
-                                    <div className="timer-row">
-                                        <label className="timer-label">Timer</label>
-                                        <input
-                                            type="number"
-                                            className="timer-input"
-                                            value={gameState.timerDuration}
-                                            min={5}
-                                            max={120}
-                                            onChange={e => setGameState(prev => ({ ...prev, timerDuration: parseInt(e.target.value) || 30 }))}
-                                        />
-                                        <span className="timer-unit">sec</span>
-                                        <label className="timer-auto-label">
-                                            <input
-                                                type="checkbox"
-                                                checked={gameState.timerAutoStart}
-                                                onChange={e => broadcast({ ...gameState, timerAutoStart: e.target.checked })}
-                                            />
-                                            Auto
-                                        </label>
-                                        <button className={`btn-sm ${gameState.timerEndTime ? 'btn-timer-stop' : 'btn-timer-start'}`} onClick={handleTimerToggle}>
-                                            {gameState.timerEndTime ? '⏹ Stop' : '⏱ Start'}
-                                        </button>
-                                    </div>
-                                </div>
+                                        <div className="action-buttons">
+                                            <div className="action-row">
+                                                <button
+                                                    className="btn-md btn-reveal"
+                                                    onClick={handleReveal}
+                                                    disabled={gameState.showAnswer}
+                                                >
+                                                    👁 Reveal Answer
+                                                </button>
+                                                <button className="btn-md btn-board" onClick={toggleBoard}>
+                                                    {gameState.showBoard ? '❌ Hide Board' : '📋 Show Board'}
+                                                </button>
+                                            </div>
+                                            {isFinalQuestion && (
+                                                <button className="btn-md btn-wager" onClick={() => setShowWagerModal(true)}>
+                                                    💰 Manage Final Wagers
+                                                </button>
+                                            )}
+                                        </div>
 
-                                <div className="keyboard-hints">
-                                    <span>Shortcuts:</span>
-                                    <kbd>Space</kbd> Reveal
-                                    <kbd>←</kbd><kbd>→</kbd> Nav
-                                    <kbd>B</kbd> Board
-                                    <kbd>L</kbd> Scores
-                                    <kbd>T</kbd> Timer
-                                </div>
+                                        {/* Timer Controls */}
+                                        <div className="timer-controls">
+                                            <div className="timer-row">
+                                                <label className="timer-label">Timer</label>
+                                                <input
+                                                    type="number"
+                                                    className="timer-input"
+                                                    value={gameState.timerDuration}
+                                                    min={5}
+                                                    max={120}
+                                                    onChange={e => setGameState(prev => ({ ...prev, timerDuration: parseInt(e.target.value) || 30 }))}
+                                                />
+                                                <span className="timer-unit">sec</span>
+                                                <label className="timer-auto-label">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={gameState.timerAutoStart}
+                                                        onChange={e => broadcast({ ...gameState, timerAutoStart: e.target.checked })}
+                                                    />
+                                                    Auto
+                                                </label>
+                                                <button className={`btn-sm ${gameState.timerEndTime ? 'btn-timer-stop' : 'btn-timer-start'}`} onClick={handleTimerToggle}>
+                                                    {gameState.timerEndTime ? '⏹ Stop' : '⏱ Start'}
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        <div className="keyboard-hints">
+                                            <span>Shortcuts:</span>
+                                            <kbd>Space</kbd> Reveal
+                                            <kbd>←</kbd><kbd>→</kbd> Nav
+                                            <kbd>B</kbd> Board
+                                            <kbd>L</kbd> Scores
+                                            <kbd>T</kbd> Timer
+                                        </div>
+                                    </>
+                                )}
                             </div>
 
                             {/* Team Scoreboard */}
@@ -432,6 +530,16 @@ const Dashboard: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
                                             <div key={i} className={`team-score-row ${gameState.allInActive && t.allInUsed ? 'all-in-active' : ''}`}>
                                                 <div className="team-info">
                                                     <span className="team-name">{t.name}</span>
+                                                    {remoteIp && (
+                                                        <button
+                                                            className="btn-sm btn-nav"
+                                                            onClick={() => handleGenerateRejoinQr(t.name)}
+                                                            title="Generate rejoin QR for this team"
+                                                            style={{ padding: '0.15rem 0.4rem', fontSize: '0.7rem', marginLeft: '0.25rem' }}
+                                                        >
+                                                            QR
+                                                        </button>
+                                                    )}
                                                     <span className="team-pts">{t.score} pts</span>
                                                     {isFinalQuestion && t.wager !== undefined && <span className="wager-label">(Wagered: {t.wager})</span>}
                                                 </div>
@@ -453,6 +561,33 @@ const Dashboard: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
                                                     >
                                                         {gameState.allInActive && t.allInUsed ? 'Deactivate' : (t.allInUsed ? '🔒 Used' : '🔥 All-In')}
                                                     </button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </>
+                            )}
+
+                            {playerAnswers.length > 0 && (
+                                <>
+                                    <h2 className="section-title" style={{ marginTop: '1.5rem' }}>Team Answers</h2>
+                                    <div className="team-scores">
+                                        {playerAnswers.map((a, i) => (
+                                            <div key={i} className="team-score-row" style={{
+                                                borderLeft: a.lockedIn ? '4px solid #1db954' : '4px solid #555'
+                                            }}>
+                                                <div className="team-info">
+                                                    <span className="team-name">
+                                                        {a.teamName} {a.lockedIn ? '✅' : '⏳'}
+                                                    </span>
+                                                    {a.changeCount > 0 && (
+                                                        <span style={{ color: '#f39c12', fontSize: '0.8rem', marginLeft: '0.5rem' }}>
+                                                            (edited x{a.changeCount})
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <div style={{ color: '#ccc', fontSize: '1rem', marginTop: '0.25rem' }}>
+                                                    {a.answer || <em style={{ opacity: 0.4 }}>No answer yet</em>}
                                                 </div>
                                             </div>
                                         ))}
@@ -534,6 +669,21 @@ const Dashboard: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
                                         </>
                                     );
                                 })()}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Rejoin QR Modal — fully opaque to hide answers from the player scanning */}
+                {showRejoinModal && rejoinQrData && (
+                    <div className="modal-overlay" onClick={() => setShowRejoinModal(false)} style={{ background: '#000' }}>
+                        <div className="glass-panel modal-content" onClick={e => e.stopPropagation()} style={{ textAlign: 'center', backdropFilter: 'none' }}>
+                            <h2>Rejoin QR for {rejoinQrData.teamName}</h2>
+                            <p>Have the team scan this QR code. It expires after one use.</p>
+                            <img src={rejoinQrData.qrDataUrl} alt="Rejoin QR"
+                                 style={{ width: '300px', borderRadius: '12px', background: '#fff', padding: '1rem' }} />
+                            <div className="modal-actions">
+                                <button className="btn-md btn-nav" onClick={() => setShowRejoinModal(false)}>Close</button>
                             </div>
                         </div>
                     </div>

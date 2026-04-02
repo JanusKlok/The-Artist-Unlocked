@@ -36,6 +36,7 @@ export interface ElectronAPI {
     setConfig: (config: AppConfig) => Promise<boolean>;
     broadcastState: (state: GameState) => void;
     onStateUpdate: (callback: (state: GameState) => void) => void;
+    onMobileConnected: (callback: () => void) => void;
     startRemoteServer: (initialGuid: string) => Promise<string>;
     updateRemoteGuid: (guid: string) => Promise<boolean>;
     openPresentationWindow: () => Promise<void>;
@@ -46,6 +47,13 @@ export interface ElectronAPI {
     fetchFanart: (mbid: string, quizId: number) => Promise<FanartAssets | null>;
     listProviderModels: (provider: string, apiKey?: string) => Promise<string[]>;
     generateTrivia: (provider: string, model: string, prompt: string) => Promise<string>;
+    generatePlayerGuid: () => Promise<string>;
+    getPlayerTeams: () => Promise<{ teamName: string; connected: boolean }[]>;
+    generateRejoinQr: (teamName: string) => Promise<{ teamName: string; rejoinToken: string; url: string }>;
+    removePlayerTeam: (teamName: string) => Promise<boolean>;
+    onPlayerAnswersUpdated: (callback: (data: import('../utils/gameLogic').QuizmasterAnswerData) => void) => void;
+    onPlayerTeamJoined: (callback: (data: { teamName: string }) => void) => void;
+    onTeamLockinStatus: (callback: (status: Record<string, boolean>) => void) => void;
 }
 
 declare global {

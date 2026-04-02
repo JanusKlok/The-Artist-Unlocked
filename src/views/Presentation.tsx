@@ -4,6 +4,7 @@ import { loadFull } from 'tsparticles';
 import type { GameState } from '../utils/gameLogic';
 import type { QuizArtist } from '../services/ai';
 import { sounds } from '../utils/sounds';
+import QRCode from 'qrcode';
 
 // Font style mapping
 const FONT_MAP: Record<string, string> = {
@@ -98,6 +99,10 @@ const Presentation: React.FC = () => {
     const [timerRemaining, setTimerRemaining] = useState<number | null>(null);
     const [timerExpired, setTimerExpired] = useState(false);
     const [transitionKey, setTransitionKey] = useState(0);
+    const [playerQrDataUrl, setPlayerQrDataUrl] = useState('');
+    const [lobbyTeams, setLobbyTeams] = useState<string[]>([]);
+    const [newTeamFlash, setNewTeamFlash] = useState<string | null>(null);
+    const [teamLockins, setTeamLockins] = useState<Record<string, boolean>>({});
     const answerRef = useRef<HTMLDivElement>(null);
     const isMountedRef = useRef(true);
     const quizDataCacheRef = useRef<QuizArtist[]>([]);
@@ -136,6 +141,41 @@ const Presentation: React.FC = () => {
 
         return () => { isMountedRef.current = false; };
     }, []);
+
+    // Generate player QR code when showPlayerQr and playerQrUrl are set
+    useEffect(() => {
+        if (!gameState?.showPlayerQr || !gameState?.playerQrUrl) {
+            setPlayerQrDataUrl('');
+            return;
+        }
+        QRCode.toDataURL(gameState.playerQrUrl, {
+            width: 300, margin: 2,
+            color: { dark: '#000000', light: '#ffffff' }
+        })
+            .then(setPlayerQrDataUrl)
+            .catch(console.error);
+    }, [gameState?.showPlayerQr, gameState?.playerQrUrl]);
+
+    // Listen for team joins and lock-in status
+    useEffect(() => {
+        if (window.electronAPI?.onPlayerTeamJoined) {
+            window.electronAPI.onPlayerTeamJoined((data) => {
+                setLobbyTeams(prev => [...prev, data.teamName]);
+                setNewTeamFlash(data.teamName);
+                setTimeout(() => setNewTeamFlash(null), 2000);
+            });
+        }
+        if (window.electronAPI?.onTeamLockinStatus) {
+            window.electronAPI.onTeamLockinStatus(setTeamLockins);
+        }
+    }, []);
+
+    // Populate lobbyTeams from gameState.teams during lobby
+    useEffect(() => {
+        if (gameState?.lobbyMode && gameState.teams) {
+            setLobbyTeams(gameState.teams.map(t => t.name));
+        }
+    }, [gameState?.lobbyMode, gameState?.teams]);
 
     // Scroll to top on step change
     useEffect(() => {
@@ -461,7 +501,7 @@ const Presentation: React.FC = () => {
                     <div className="artist-info">
                         <div className="round-badge">ROUND {gameState.activeArtistIndex + 1}</div>
 
-                        {isUnlockPhase ? (
+                        {isUnlockPhase && !gameState.showAnswer ? (
                             <h1 className={`artist-name ${textEffectClass}`}>???</h1>
                         ) : artist.fanart_logo ? (
                             <div className="artist-logo-container">
@@ -503,6 +543,12 @@ const Presentation: React.FC = () => {
                                 <div className="music-icon-pulse">🎵</div>
                                 <h2>IDENTIFY THE ARTIST</h2>
                                 <p>Listen carefully to the audio clip...</p>
+                                {gameState.showAnswer && (
+                                    <div className="answer-reveal" ref={answerRef}>
+                                        <div className="reveal-line"></div>
+                                        <h3 className="answer-text">{artist.artist}</h3>
+                                    </div>
+                                )}
                             </div>
                         ) : question && (
                             <div className="lore-content">
@@ -565,6 +611,11 @@ const Presentation: React.FC = () => {
                                     <div className="team-name">
                                         {i === 0 && <span className="crown">👑</span>}
                                         {t.name}
+                                        {teamLockins[t.name] !== undefined && !gameState.showAnswer && (
+                                            <span className="lockin-indicator">
+                                                {teamLockins[t.name] ? ' ✅' : ' ⏳'}
+                                            </span>
+                                        )}
                                     </div>
                                     <div className="team-score">{t.score}</div>
                                 </div>
@@ -634,6 +685,38 @@ const Presentation: React.FC = () => {
                                         </div>
                                     </div>
                                 ))}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {/* Lobby Overlay */}
+            {gameState.lobbyMode && (
+                <div className="lobby-overlay">
+                    <div className="lobby-content">
+                        <h1 className="lobby-title">JOIN THE GAME!</h1>
+                        <p className="lobby-subtitle">Scan the QR code with your phone</p>
+
+                        {playerQrDataUrl && gameState.showPlayerQr && (
+                            <div className="lobby-qr">
+                                <img src={playerQrDataUrl} alt="Join QR Code" />
+                            </div>
+                        )}
+
+                        {lobbyTeams.length > 0 && (
+                            <div className="lobby-teams">
+                                <h3>Teams Joined ({lobbyTeams.length})</h3>
+                                <div className="lobby-team-list">
+                                    {lobbyTeams.map((name, i) => (
+                                        <div
+                                            key={i}
+                                            className={`lobby-team-chip ${name === newTeamFlash ? 'team-flash' : ''}`}
+                                        >
+                                            {name}
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
                         )}
                     </div>
@@ -1377,6 +1460,92 @@ const Presentation: React.FC = () => {
                     padding: 1rem 2rem;
                     background: rgba(255,255,255,0.05);
                     border-radius: 12px;
+                }
+
+                /* Lock-in indicator */
+                .lockin-indicator {
+                    font-size: 0.8em;
+                    margin-left: 0.3rem;
+                }
+
+                /* Lobby overlay */
+                .lobby-overlay {
+                    position: absolute;
+                    top: 0; left: 0; width: 100%; height: 100%;
+                    z-index: 50;
+                    background: rgba(0, 0, 0, 0.9);
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    text-align: center;
+                }
+
+                .lobby-content {
+                    max-width: 700px;
+                    padding: 2rem;
+                }
+
+                .lobby-title {
+                    font-size: 4rem;
+                    color: #00E5FF;
+                    text-transform: uppercase;
+                    letter-spacing: 5px;
+                    margin-bottom: 0.5rem;
+                    text-shadow: 0 0 30px rgba(0, 229, 255, 0.5);
+                }
+
+                .lobby-subtitle {
+                    font-size: 1.5rem;
+                    color: rgba(255, 255, 255, 0.7);
+                    margin-bottom: 2rem;
+                }
+
+                .lobby-qr img {
+                    width: 300px;
+                    border-radius: 16px;
+                    background: #fff;
+                    padding: 1rem;
+                    box-shadow: 0 20px 60px rgba(0, 229, 255, 0.3);
+                }
+
+                .lobby-teams {
+                    margin-top: 2.5rem;
+                }
+
+                .lobby-teams h3 {
+                    color: rgba(255, 255, 255, 0.6);
+                    font-size: 1.2rem;
+                    margin-bottom: 1rem;
+                }
+
+                .lobby-team-list {
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 0.75rem;
+                    justify-content: center;
+                }
+
+                .lobby-team-chip {
+                    background: rgba(0, 229, 255, 0.15);
+                    border: 1px solid rgba(0, 229, 255, 0.3);
+                    padding: 0.6rem 1.5rem;
+                    border-radius: 50px;
+                    font-weight: bold;
+                    font-size: 1.1rem;
+                    color: #fff;
+                    transition: all 0.3s;
+                }
+
+                .lobby-team-chip.team-flash {
+                    animation: teamJoinFlash 0.6s ease;
+                    background: rgba(0, 229, 255, 0.4);
+                    border-color: #00E5FF;
+                }
+
+                @keyframes teamJoinFlash {
+                    0% { transform: scale(0.5); opacity: 0; }
+                    50% { transform: scale(1.15); }
+                    100% { transform: scale(1); opacity: 1; }
                 }
             `}</style>
         </div>

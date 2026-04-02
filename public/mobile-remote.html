@@ -322,6 +322,11 @@
                 <span class="label">Teams & Scoring</span>
                 <div id="team-list"></div>
             </div>
+
+            <div id="player-answers-section" style="display: none;">
+                <span class="label">Team Answers</span>
+                <div id="player-answers-list"></div>
+            </div>
         </div>
     </div>
 
@@ -365,9 +370,10 @@
 
         const urlParams = new URLSearchParams(window.location.search);
         const authGuid = urlParams.get('auth');
+        let sessionToken = sessionStorage.getItem('remote-session-token');
 
         const socket = io({
-            query: { auth: authGuid },
+            query: { auth: authGuid, session: sessionToken },
             transports: ['polling', 'websocket'],
             reconnection: true,
             reconnectionAttempts: Infinity,
@@ -385,6 +391,14 @@
             document.getElementById('connection-status').innerText = '✅ Connected';
             document.getElementById('connection-status').style.color = '#1db954';
             setTimeout(() => socket.emit('request-state'), 500);
+        });
+
+        socket.on('session-token', (token) => {
+            log('Session token received');
+            sessionToken = token;
+            sessionStorage.setItem('remote-session-token', token);
+            // Update socket query so reconnections use the session token
+            socket.io.opts.query = { session: token };
         });
 
         socket.on('disconnect', (reason) => {
@@ -429,6 +443,37 @@
             };
             updateUI();
             updateTimer();
+        });
+
+        socket.on('player-answers-updated', (data) => {
+            const section = document.getElementById('player-answers-section');
+            const list = document.getElementById('player-answers-list');
+
+            if (!data.answers || data.answers.length === 0) {
+                section.style.display = 'none';
+                return;
+            }
+
+            section.style.display = 'block';
+            list.innerHTML = '';
+
+            data.answers.forEach(a => {
+                const div = document.createElement('div');
+                div.className = 'team-row';
+                const changedIndicator = a.changeCount > 0
+                    ? ` <span style="color:#f39c12">(edited x${a.changeCount})</span>`
+                    : '';
+                const lockIcon = a.lockedIn ? '✅' : '⏳';
+                div.innerHTML = `
+                    <div class="team-header">
+                        <span><strong>${a.teamName}</strong> ${lockIcon}</span>
+                    </div>
+                    <div style="padding: 0.25rem 0; color: #ccc; font-size: 0.95rem;">
+                        ${a.answer || '<em style="opacity:0.4">No answer yet</em>'}${changedIndicator}
+                    </div>
+                `;
+                list.appendChild(div);
+            });
         });
 
         // Timer update loop
@@ -478,11 +523,62 @@
             timerInterval = setInterval(tick, 200);
         }
 
+        function startQuiz() {
+            if (!gameState) return;
+            broadcast({ ...gameState, lobbyMode: false, teamsLocked: true, showPlayerQr: false });
+        }
+
         function updateUI() {
             if (!gameState || !gameState.quizData || gameState.quizData.length === 0) {
                 document.getElementById('quiz-info').style.display = 'none';
                 document.getElementById('game-status').innerText = 'Idle';
+                document.querySelector('.controls').innerHTML = `
+                    <div style="text-align:center; color:#888; padding:1rem;">No quiz hosted</div>
+                `;
                 return;
+            }
+
+            const controls = document.querySelector('.controls');
+
+            // Lobby mode: show only Start Quiz button
+            if (gameState.lobbyMode) {
+                document.getElementById('quiz-info').style.display = 'none';
+                document.getElementById('game-status').innerText = 'Lobby — Waiting for teams';
+                controls.innerHTML = `
+                    <div style="text-align:center; padding:0.5rem 0;">
+                        <p style="color:#888; margin-bottom:1rem; font-size:0.9rem;">Teams are joining — start when ready</p>
+                        <button class="primary" onclick="startQuiz()" style="width:100%; padding:1rem; font-size:1.2rem;">Start Quiz</button>
+                    </div>
+                `;
+                return;
+            }
+
+            // Restore normal controls if they were replaced by lobby
+            if (!controls.querySelector('#btn-next')) {
+                controls.innerHTML = `
+                    <div class="control-row">
+                        <button id="btn-prev">⬅ Prev</button>
+                        <button id="btn-next" class="primary">Next ➡</button>
+                    </div>
+                    <div class="timer-controls-row">
+                        <div class="timer-settings">
+                            <span style="font-size:0.9rem;">⏱</span>
+                            <input id="timer-duration-input" type="number" min="5" max="120" value="30">
+                            <span style="color:#888; font-size:0.75rem;">sec</span>
+                            <label class="timer-auto-label">
+                                <input type="checkbox" id="timer-auto-check"> Auto
+                            </label>
+                        </div>
+                        <button id="btn-timer" class="timer-start">⏱ Start</button>
+                    </div>
+                    <div class="control-row">
+                        <button id="btn-board">📋 Board</button>
+                        <button id="btn-leaderboard">🏆 Scores</button>
+                    </div>
+                    <button id="btn-reveal" class="secondary">👁 Reveal Answer</button>
+                    <button id="btn-spotify">🎵 Play Spotify</button>
+                `;
+                bindControlEvents();
             }
 
             document.getElementById('quiz-info').style.display = 'block';
@@ -594,41 +690,86 @@
             broadcast(s);
         }
 
-        document.getElementById('btn-timer').onclick = () => {
-            if (!gameState) return;
-            if (gameState.timerEndTime) {
-                broadcast({ ...gameState, timerEndTime: null });
-            } else {
-                const duration = parseInt(document.getElementById('timer-duration-input').value) || 30;
-                broadcast({ ...gameState, timerEndTime: Date.now() + duration * 1000, timerDuration: duration });
-            }
-        };
+        function bindControlEvents() {
+            document.getElementById('btn-timer').onclick = () => {
+                if (!gameState) return;
+                if (gameState.timerEndTime) {
+                    broadcast({ ...gameState, timerEndTime: null });
+                } else {
+                    const duration = parseInt(document.getElementById('timer-duration-input').value) || 30;
+                    broadcast({ ...gameState, timerEndTime: Date.now() + duration * 1000, timerDuration: duration });
+                }
+            };
 
-        document.getElementById('timer-auto-check').onchange = (e) => {
-            if (!gameState) return;
-            broadcast({ ...gameState, timerAutoStart: e.target.checked });
-        };
+            document.getElementById('timer-auto-check').onchange = (e) => {
+                if (!gameState) return;
+                broadcast({ ...gameState, timerAutoStart: e.target.checked });
+            };
 
-        document.getElementById('timer-duration-input').onchange = (e) => {
-            if (!gameState) return;
-            const duration = Math.min(120, Math.max(5, parseInt(e.target.value) || 30));
-            e.target.value = duration;
-            // Update local state so Start uses the new value without needing a broadcast
-            gameState = { ...gameState, timerDuration: duration };
-        };
+            document.getElementById('timer-duration-input').onchange = (e) => {
+                if (!gameState) return;
+                const duration = Math.min(120, Math.max(5, parseInt(e.target.value) || 30));
+                e.target.value = duration;
+                gameState = { ...gameState, timerDuration: duration };
+            };
 
+            document.getElementById('btn-board').onclick = () => {
+                broadcast({ ...gameState, showBoard: !gameState.showBoard });
+            };
+
+            document.getElementById('btn-leaderboard').onclick = () => {
+                broadcast({ ...gameState, showLeaderboard: !gameState.showLeaderboard });
+            };
+
+            document.getElementById('btn-next').onclick = () => {
+                if (gameState.lobbyMode) {
+                    startQuiz();
+                    return;
+                }
+                broadcast(getNextState(gameState));
+            };
+
+            document.getElementById('btn-prev').onclick = () => {
+                if (gameState.winnerMode) {
+                    broadcast({ ...gameState, winnerMode: false });
+                } else {
+                    broadcast(getPrevState(gameState));
+                }
+            };
+
+            document.getElementById('btn-reveal').onclick = () => {
+                broadcast({ ...gameState, showAnswer: true });
+            };
+
+            document.getElementById('btn-spotify').onclick = () => {
+                const isUnlock = gameState.activeTier === 0;
+                const artist = gameState.quizData[gameState.activeArtistIndex];
+                const uri = isUnlock ? artist.unlock_song_uri : artist.lore_ladder[gameState.activeTier - 1].audio_hint_uri;
+
+                if (uri) {
+                    if (gameState.spotifyMobileMode === 'mobile_app') {
+                        window.location.assign(uri);
+                    } else if (gameState.spotifyMobileMode === 'mobile_web') {
+                        const parts = uri.split(':');
+                        if (parts.length >= 3) {
+                            const url = `https://open.spotify.com/${parts[1]}/${parts[2]}`;
+                            window.open(url, '_blank');
+                        } else {
+                            const url = uri.replace('spotify:', 'https://open.spotify.com/').replace(/:/g, '/');
+                            window.open(url, '_blank');
+                        }
+                    } else {
+                        socket.emit('spotify-trigger', uri);
+                    }
+                }
+            };
+        }
+
+        // Bind events that live outside the dynamic controls area
         document.getElementById('btn-stop').onclick = () => {
             if (confirm('Stop hosting and exit?')) {
                 broadcast({ ...gameState, quizData: [] });
             }
-        };
-
-        document.getElementById('btn-board').onclick = () => {
-            broadcast({ ...gameState, showBoard: !gameState.showBoard });
-        };
-
-        document.getElementById('btn-leaderboard').onclick = () => {
-            broadcast({ ...gameState, showLeaderboard: !gameState.showLeaderboard });
         };
 
         document.getElementById('answer-card').onclick = () => {
@@ -636,44 +777,8 @@
             updateUI();
         };
 
-        document.getElementById('btn-next').onclick = () => {
-            broadcast(getNextState(gameState));
-        };
-
-        document.getElementById('btn-prev').onclick = () => {
-            if (gameState.winnerMode) {
-                broadcast({ ...gameState, winnerMode: false });
-            } else {
-                broadcast(getPrevState(gameState));
-            }
-        };
-
-        document.getElementById('btn-reveal').onclick = () => {
-            broadcast({ ...gameState, showAnswer: true });
-        };
-
-        document.getElementById('btn-spotify').onclick = () => {
-            const isUnlock = gameState.activeTier === 0;
-            const artist = gameState.quizData[gameState.activeArtistIndex];
-            const uri = isUnlock ? artist.unlock_song_uri : artist.lore_ladder[gameState.activeTier - 1].audio_hint_uri;
-
-            if (uri) {
-                if (gameState.spotifyMobileMode === 'mobile_app') {
-                    window.location.assign(uri);
-                } else if (gameState.spotifyMobileMode === 'mobile_web') {
-                    const parts = uri.split(':');
-                    if (parts.length >= 3) {
-                        const url = `https://open.spotify.com/${parts[1]}/${parts[2]}`;
-                        window.open(url, '_blank');
-                    } else {
-                        const url = uri.replace('spotify:', 'https://open.spotify.com/').replace(/:/g, '/');
-                        window.open(url, '_blank');
-                    }
-                } else {
-                    socket.emit('spotify-trigger', uri);
-                }
-            }
-        };
+        // Initial bind for control buttons
+        bindControlEvents();
 
         function getNextState(state) {
             const s = JSON.parse(JSON.stringify(state));

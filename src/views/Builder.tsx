@@ -35,6 +35,7 @@ const getApi = () => window.electronAPI || {
     updateRemoteGuid: async () => true,
     openPresentationWindow: async () => {},
     onStateUpdate: () => {},
+    onMobileConnected: () => {},
     listProviderModels: async () => [],
     generateTrivia: async () => '[]',
 } as unknown as typeof window.electronAPI;
