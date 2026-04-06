@@ -35,6 +35,13 @@ config.json
 quizzes/
 src/services/mock_data.json
 
+# Playwright
+test-results/
+playwright-report/
+playwright/.cache/
+e2e-tests/screenshots/
+screenshots/test-*.png
+
 #AI Agent folders and files
 .claude/
 CLAUDE.md

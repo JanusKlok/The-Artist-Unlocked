@@ -89,24 +89,38 @@ const Setup: React.FC = () => {
         const configured = isConfigured(provider);
 
         return (
-            <div key={provider} style={{ border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', overflow: 'hidden' }}>
+            <div key={provider} style={{
+                border: `1px solid ${configured ? 'rgba(29, 185, 84, 0.25)' : 'rgba(255,255,255,0.1)'}`,
+                borderRadius: '10px', overflow: 'hidden',
+                transition: 'border-color 0.2s'
+            }}>
                 <button
                     onClick={() => setExpandedProvider(isExpanded ? null : provider)}
                     style={{
                         width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                        padding: '0.85rem 1.25rem', background: 'rgba(255,255,255,0.04)',
-                        border: 'none', boxShadow: 'none', cursor: 'pointer', textAlign: 'left'
+                        padding: '0.85rem 1.25rem',
+                        background: configured ? 'rgba(29, 185, 84, 0.04)' : 'rgba(255,255,255,0.04)',
+                        border: 'none', boxShadow: 'none', cursor: 'pointer', textAlign: 'left',
+                        borderRadius: 0
                     }}
                 >
-                    <span style={{ fontWeight: 600, fontSize: '0.95rem' }}>{PROVIDER_LABELS[provider]}</span>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                        <span style={{
+                            width: '8px', height: '8px', borderRadius: '50%',
+                            background: configured ? 'var(--success)' : 'rgba(255,255,255,0.15)',
+                            boxShadow: configured ? '0 0 6px rgba(29,185,84,0.5)' : 'none',
+                            flexShrink: 0
+                        }} />
+                        <span style={{ fontWeight: 600, fontSize: '0.95rem' }}>{PROVIDER_LABELS[provider]}</span>
+                    </span>
                     <span style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                        {configured && <span style={{ color: '#1db954', fontSize: '0.75rem', fontWeight: 700 }}>● Configured</span>}
-                        <span style={{ color: '#888', fontSize: '0.85rem' }}>{isExpanded ? '▲' : '▼'}</span>
+                        {configured && <span style={{ color: 'var(--success)', fontSize: '0.72rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Ready</span>}
+                        <span style={{ color: '#888', fontSize: '0.85rem', transition: 'transform 0.2s', transform: isExpanded ? 'rotate(180deg)' : 'none' }}>▼</span>
                     </span>
                 </button>
 
                 {isExpanded && (
-                    <div style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                    <div style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1rem', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
                         <div>
                             <label style={labelStyle}>API Key:</label>
                             <div style={{ display: 'flex', gap: '0.5rem' }}>
@@ -115,12 +129,14 @@ const Setup: React.FC = () => {
                                     value={key}
                                     placeholder={`${PROVIDER_LABELS[provider]} API key...`}
                                     onChange={e => setKey(provider, e.target.value)}
+                                    onBlur={() => { if (key && !models.length && !isLoading) fetchProviderModels(provider, key); }}
                                     style={inputStyle}
                                 />
                                 <button
                                     className="btn-sm"
                                     onClick={() => fetchProviderModels(provider, key)}
                                     disabled={!key || isLoading}
+                                    style={{ whiteSpace: 'nowrap' }}
                                 >
                                     {isLoading ? 'Loading...' : 'Fetch Models'}
                                 </button>
@@ -142,13 +158,13 @@ const Setup: React.FC = () => {
                                     )}
                                 </select>
                                 {model && models.length > 0 && !models.includes(model) && (
-                                    <p style={{ color: '#ff8c00', fontSize: '0.8rem', marginTop: '0.4rem' }}>⚠️ Previously saved model not found. Please select a new one.</p>
+                                    <p style={{ color: 'var(--warning)', fontSize: '0.8rem', marginTop: '0.4rem' }}>Previously saved model not found. Please select a new one.</p>
                                 )}
                             </div>
                         )}
 
                         {!models.length && !model && key && (
-                            <p style={{ color: '#888', fontSize: '0.82rem', margin: 0 }}>Click "Fetch Models" to load available models for this key.</p>
+                            <p style={{ color: '#888', fontSize: '0.82rem', margin: 0 }}>Models will auto-load when you leave the key field, or click "Fetch Models".</p>
                         )}
 
                         {configured && (
@@ -165,7 +181,7 @@ const Setup: React.FC = () => {
                                         }
                                     }
                                 }}
-                                style={{ alignSelf: 'flex-start', background: 'rgba(255,68,68,0.1)', border: '1px solid rgba(255,68,68,0.3)', color: '#ff4444' }}
+                                style={{ alignSelf: 'flex-start', background: 'rgba(255,68,68,0.1)', border: '1px solid rgba(255,68,68,0.3)', color: 'var(--danger)' }}
                             >
                                 Remove Configuration
                             </button>
@@ -177,10 +193,10 @@ const Setup: React.FC = () => {
     };
 
     return (
-        <div style={{ padding: '2rem', maxWidth: '640px', margin: '5vh auto', animation: 'fadeIn 0.5s' }}>
+        <div style={{ padding: '2rem', maxWidth: '640px', margin: '3vh auto', animation: 'fadeIn 0.5s', paddingBottom: '5rem' }}>
             <div className="glass-panel">
                 <h1 style={{ textAlign: 'center', color: 'var(--primary)', margin: '0 0 0.5rem 0' }}>🔐 Setup Configuration</h1>
-                <p style={{ textAlign: 'center', color: '#bbb', marginBottom: '2.5rem', fontSize: '0.95rem' }}>Please enter your API credentials. They are encrypted and stored locally.</p>
+                <p style={{ textAlign: 'center', color: '#bbb', marginBottom: '2rem', fontSize: '0.95rem' }}>Your API credentials are encrypted and stored locally.</p>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
 
@@ -203,7 +219,7 @@ const Setup: React.FC = () => {
                             </div>
                         )}
 
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
                             {AI_PROVIDERS.map(renderProviderSection)}
                         </div>
                     </div>
@@ -260,15 +276,27 @@ const Setup: React.FC = () => {
                             style={{ width: '100%' }}
                         />
                     </div>
-
-                    <button
-                        onClick={handleSave}
-                        disabled={loadingProvider !== null}
-                        style={{ padding: '1rem', marginTop: '0.5rem', fontSize: '1.1rem' }}
-                    >
-                        {saved ? '✅ Saved Successfully!' : 'Save'}
-                    </button>
                 </div>
+            </div>
+
+            {/* Sticky save footer */}
+            <div style={{
+                position: 'fixed', bottom: 0, left: 0, right: 0,
+                padding: '0.75rem 2rem',
+                background: 'rgba(10, 10, 30, 0.92)',
+                backdropFilter: 'blur(12px)',
+                borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+                display: 'flex', justifyContent: 'center',
+                zIndex: 200
+            }}>
+                <button
+                    className="btn-cta"
+                    onClick={handleSave}
+                    disabled={loadingProvider !== null}
+                    style={{ padding: '0.8rem 3rem', fontSize: '1rem', maxWidth: '400px', width: '100%' }}
+                >
+                    {saved ? '✅ Saved Successfully!' : '💾 Save Configuration'}
+                </button>
             </div>
         </div>
     );

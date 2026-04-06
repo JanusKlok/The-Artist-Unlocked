@@ -15,8 +15,9 @@ export async function listProviderModels(provider: AiProvider, apiKey: string): 
                 });
                 if (!res.ok) return [];
                 const data = await res.json();
+                if (!Array.isArray(data.models)) return [];
                 return (data.models as Record<string, unknown>[])
-                    .filter(m => (m.supportedGenerationMethods as string[]).includes('generateContent'))
+                    .filter(m => Array.isArray(m.supportedGenerationMethods) && (m.supportedGenerationMethods as string[]).includes('generateContent'))
                     .map(m => (m.name as string).replace('models/', ''));
             }
             case 'openai': {

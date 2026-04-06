@@ -39,7 +39,7 @@
 
 /* Large — full-width primary actions */
 .btn-lg {
-    border-radius: 12px;
+    border-radius: var(--radius-md);
     border: none;
     padding: 1rem 1.5rem;
     font-size: 1.2rem;
@@ -60,7 +60,7 @@
 
 /* Medium — game flow controls */
 .btn-md {
-    border-radius: 12px;
+    border-radius: var(--radius-md);
     border: none;
     padding: 0.8rem 1.2rem;
     font-size: 1rem;
@@ -80,7 +80,7 @@
 
 /* Small — point adjustments, toggles */
 .btn-sm {
-    border-radius: 8px;
+    border-radius: var(--radius-sm);
     border: none;
     padding: 0.4rem 0.7rem;
     font-size: 0.8rem;
@@ -119,16 +119,20 @@
 .btn-accent {
     background: var(--secondary);
     color: #000;
+    border: none;
     box-shadow: 0 4px 15px rgba(0, 229, 255, 0.3);
 }
 
 .btn-accent:hover {
     box-shadow: 0 6px 20px rgba(0, 229, 255, 0.5);
+    color: #000;
 }
 
 .btn-primary {
     background: linear-gradient(45deg, var(--primary), #ff79a1);
     box-shadow: 0 4px 15px rgba(255, 64, 129, 0.4);
+    border: none;
+    color: white;
 }
 
 .btn-danger {
@@ -154,28 +158,37 @@
 }
 
 .btn-success {
-    background: #1db954;
+    background: var(--success);
+    border: none;
 }
 
 .btn-success:hover {
-    background: #1ed760;
+    background: var(--success-hover);
 }
 
 .btn-reveal {
-    background: #007bff;
+    background: var(--info);
+    border: none;
 }
 
 .btn-board {
-    background: #f39c12;
+    background: var(--gold);
     color: #000;
+    border: none;
 }
 
 .btn-wager {
-    background: #ff4444;
+    background: var(--danger);
+    border: none;
 }
 
 .btn-nav {
     background: #444;
+    border: none;
+}
+
+.btn-nav:hover {
+    background: #555;
 }
 
 .btn-nav:disabled {
@@ -186,7 +199,8 @@
 }
 
 .btn-finish {
-    background: #1db954 !important;
+    background: var(--success) !important;
+    border: none;
 }
 
 .btn-spotify-disabled {
@@ -194,19 +208,19 @@
 }
 
 /* ---- Point Button Colors ---- */
-.btn-pts-neg { background: #dc3545; }
-.btn-pts-neg-sm { background: #ff4444; }
-.btn-pts-pos-sm { background: #28a745; }
-.btn-pts-pos { background: #1db954; }
+.btn-pts-neg { background: #dc3545; border: none; }
+.btn-pts-neg-sm { background: var(--danger); border: none; }
+.btn-pts-pos-sm { background: #28a745; border: none; }
+.btn-pts-pos { background: var(--success); border: none; }
 
 /* ---- All-In Button States ---- */
-.btn-allin { background: #ffc107; color: #000; }
-.btn-allin-active { background: #ff4444; color: #fff; }
-.btn-allin-used { background: #555; color: #fff; }
+.btn-allin { background: var(--gold); color: #000; border: none; }
+.btn-allin-active { background: var(--danger); color: #fff; border: none; }
+.btn-allin-used { background: #555; color: #fff; border: none; }
 
 /* ---- Leaderboard Toggle ---- */
-.btn-leaderboard-hide { background: #dc3545; }
-.btn-leaderboard-show { background: #1db954; }
+.btn-leaderboard-hide { background: #dc3545; border: none; }
+.btn-leaderboard-show { background: var(--success); border: none; }
 
 /* ---- Divider ---- */
 .dashboard-divider {
@@ -461,11 +475,13 @@
 }
 
 .btn-timer-start {
-    background: #007bff;
+    background: var(--info);
+    border: none;
 }
 
 .btn-timer-stop {
     background: #dc3545;
+    border: none;
 }
 
 /* ---- Keyboard Shortcuts ---- */
@@ -571,11 +587,13 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 1rem;
+    margin-bottom: 0.5rem;
 }
 
 .prompts-header h3 {
     margin: 0;
+    font-size: 0.95rem;
+    color: #aaa;
 }
 
 .phase-badge {
@@ -583,20 +601,21 @@
     padding: 0.25rem 0.8rem;
     border-radius: 20px;
     font-weight: bold;
-    font-size: 0.85rem;
+    font-size: 0.8rem;
 }
 
 .artist-label {
     color: var(--secondary);
-    font-size: 1.5rem;
-    margin: 0 0 1rem 0;
-    font-weight: 600;
+    font-size: 1.6rem;
+    margin: 0 0 1.25rem 0;
+    font-weight: 700;
+    letter-spacing: 0.5px;
 }
 
 .prompt-card {
     padding: 1.5rem;
     border-radius: 8px;
-    margin-bottom: 1rem;
+    margin-bottom: 1.25rem;
 }
 
 .prompt-card.identification {
@@ -610,7 +629,7 @@
 
 .prompt-card.answer {
     background: rgba(0, 0, 0, 0.5);
-    border-left: 4px solid #1db954;
+    border-left: 4px solid var(--success);
     cursor: pointer;
     transition: background 0.15s;
 }
@@ -620,9 +639,12 @@
 }
 
 .prompt-label {
-    color: #aaa;
-    font-size: 0.9rem;
-    margin: 0 0 0.5rem 0;
+    color: #999;
+    font-size: 0.78rem;
+    margin: 0 0 0.6rem 0;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    font-weight: 600;
 }
 
 .prompt-label-upper {
@@ -633,21 +655,25 @@
     font-size: 1.3rem;
     font-weight: bold;
     margin: 0;
-    line-height: 1.5;
+    line-height: 1.6;
 }
 
 .prompt-text-light {
     font-weight: 400;
+    font-size: 1.15rem;
 }
 
 .prompt-text.answer-text {
-    color: #1db954;
+    color: var(--success);
+    font-size: 1.4rem;
 }
 
 .prompt-meta {
-    color: #aaa;
-    font-size: 0.9rem;
+    color: #777;
+    font-size: 0.85rem;
     margin: 1rem 0 0 0;
+    padding-top: 0.75rem;
+    border-top: 1px solid rgba(255,255,255,0.06);
 }
 
 /* ---- Winner Prompt ---- */
@@ -704,4 +730,98 @@
 .wager-label {
     display: block;
     margin-bottom: 0.3rem;
+}
+
+/* ---- Fine point controls (collapse on mobile) ---- */
+.point-fine-controls {
+    display: contents;
+}
+
+/* ---- Responsive: Mobile ---- */
+@media (max-width: 600px) {
+    .dashboard-root {
+        padding: 1rem;
+        margin: 0.5rem auto;
+    }
+
+    .dashboard-header {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .dashboard-header h1 {
+        font-size: 1.3rem;
+        text-align: center;
+    }
+
+    .dashboard-header-actions {
+        justify-content: center;
+    }
+
+    .dashboard-header-actions .btn-md {
+        flex: 1;
+        text-align: center;
+        font-size: 0.85rem;
+        padding: 0.6rem 0.8rem;
+    }
+
+    .game-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .team-setup-row {
+        flex-direction: column;
+    }
+
+    .team-setup-row button {
+        width: 100%;
+    }
+
+    .team-score-row {
+        flex-wrap: wrap;
+    }
+
+    .point-buttons {
+        width: 100%;
+        justify-content: flex-start;
+        margin-top: 0.5rem;
+    }
+
+    .point-fine-controls {
+        display: none;
+    }
+
+    .flow-buttons {
+        flex-direction: column;
+    }
+
+    .action-row {
+        flex-direction: column;
+    }
+
+    .action-row > *:first-child,
+    .action-row > *:last-child {
+        flex: 1;
+    }
+
+    .prompts-panel {
+        padding: 1rem;
+    }
+
+    .artist-label {
+        font-size: 1.3rem;
+    }
+
+    .quiz-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .no-quizzes {
+        padding: 1.5rem 1rem;
+    }
+
+    .scoreboard-heading {
+        flex-direction: column;
+        align-items: flex-start;
+    }
 }

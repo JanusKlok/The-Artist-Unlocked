@@ -350,7 +350,7 @@ const Dashboard: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
                     <h1>🎮 Quizmaster Dashboard</h1>
                     <div className="dashboard-header-actions">
                         {gameState.quizData.length > 0 && <button className="btn-md btn-danger btn-danger-hosting" onClick={handleStopHosting}>Stop Hosting</button>}
-                        <button className="btn-md btn-accent" onClick={() => getApi().openPresentationWindow()}>Open Presentation Screen</button>
+                        <button className="btn-md btn-ghost" onClick={() => getApi().openPresentationWindow()}>📺 Presentation Screen</button>
                     </div>
                 </div>
 
@@ -361,7 +361,21 @@ const Dashboard: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
                         <h2 className="section-title">Select a Quiz to Host</h2>
                         {savedQuizzes.length === 0 ? (
                             <div className="no-quizzes">
-                                <p>No quizzes found! Use the <strong>Quiz Builder</strong> tab to create one.</p>
+                                <div style={{ fontSize: '2.5rem', marginBottom: '0.75rem', opacity: 0.6 }}>🎵</div>
+                                <p style={{ marginBottom: '0.5rem' }}>No quizzes found!</p>
+                                <p style={{ fontSize: '0.9rem', color: '#888' }}>
+                                    Use the{' '}
+                                    <span
+                                        style={{ color: 'var(--secondary)', cursor: 'pointer', textDecoration: 'underline' }}
+                                        onClick={() => {
+                                            const tabs = document.querySelectorAll('.tab-btn');
+                                            if (tabs[1]) (tabs[1] as HTMLElement).click();
+                                        }}
+                                    >
+                                        Quiz Builder
+                                    </span>
+                                    {' '}tab to create one.
+                                </p>
                             </div>
                         ) : (
                             <div className="quiz-grid">
@@ -544,14 +558,14 @@ const Dashboard: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
                                                     {isFinalQuestion && t.wager !== undefined && <span className="wager-label">(Wagered: {t.wager})</span>}
                                                 </div>
                                                 <div className="point-buttons">
-                                                    <button className="btn-sm btn-pts-neg" onClick={() => addPointsToTeam(i, -currentPoints)}>-{currentPoints}</button>
-                                                    <button className="btn-sm btn-pts-neg-sm" onClick={() => addPointsToTeam(i, -5)}>-5</button>
-                                                    <button className="btn-sm btn-pts-pos-sm" onClick={() => addPointsToTeam(i, 5)}>+5</button>
-                                                    <button className="btn-sm btn-pts-pos" onClick={() => addPointsToTeam(i, currentPoints)}>+{currentPoints}</button>
+                                                    <button className="btn-sm btn-pts-neg" onClick={() => addPointsToTeam(i, -currentPoints)} title={`-${currentPoints}`}>-{currentPoints}</button>
+                                                    <button className="btn-sm btn-pts-neg-sm" onClick={() => addPointsToTeam(i, -5)} title="-5">-5</button>
+                                                    <button className="btn-sm btn-pts-pos-sm" onClick={() => addPointsToTeam(i, 5)} title="+5">+5</button>
+                                                    <button className="btn-sm btn-pts-pos" onClick={() => addPointsToTeam(i, currentPoints)} title={`+${currentPoints}`}>+{currentPoints}</button>
                                                     {isFinalQuestion && t.wager !== undefined && (
                                                         <>
-                                                            <button className="btn-sm btn-pts-pos" onClick={() => addPointsToTeam(i, t.wager || 0, true)}>+Wager</button>
                                                             <button className="btn-sm btn-pts-neg" onClick={() => addPointsToTeam(i, -(t.wager || 0), true)}>-Wager</button>
+                                                            <button className="btn-sm btn-pts-pos" onClick={() => addPointsToTeam(i, t.wager || 0, true)}>+Wager</button>
                                                         </>
                                                     )}
                                                     <button
@@ -559,7 +573,7 @@ const Dashboard: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
                                                         onClick={() => toggleTeamAllIn(i)}
                                                         disabled={(t.allInUsed && !gameState.allInActive) || isFinalQuestion}
                                                     >
-                                                        {gameState.allInActive && t.allInUsed ? 'Deactivate' : (t.allInUsed ? '🔒 Used' : '🔥 All-In')}
+                                                        {gameState.allInActive && t.allInUsed ? 'Off' : (t.allInUsed ? '🔒' : '🔥 All-In')}
                                                     </button>
                                                 </div>
                                             </div>

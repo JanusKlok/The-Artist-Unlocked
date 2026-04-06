@@ -26,7 +26,7 @@ const MainLayout: React.FC = () => {
             const quizzes = await getApi().getQuizzes();
 
             const defaultProvider = config.defaultAiProvider || 'gemini';
-            const cfg = config as Record<string, string>;
+            const cfg = config as unknown as Record<string, string>;
             const isConfigComplete =
                 cfg[`${defaultProvider}Key`] &&
                 cfg[`${defaultProvider}Model`] &&
@@ -55,19 +55,22 @@ const MainLayout: React.FC = () => {
                     className={`tab-btn ${activeTab === 'config' ? 'active' : ''}`}
                     onClick={() => setActiveTab('config')}
                 >
-                    🔐 Config
+                    <span className="tab-icon">🔐</span>
+                    <span className="tab-label">Config</span>
                 </button>
                 <button
                     className={`tab-btn ${activeTab === 'builder' ? 'active' : ''}`}
                     onClick={() => setActiveTab('builder')}
                 >
-                    🎨 Quiz Builder
+                    <span className="tab-icon">🎨</span>
+                    <span className="tab-label">Quiz Builder</span>
                 </button>
                 <button
                     className={`tab-btn ${activeTab === 'dashboard' ? 'active' : ''}`}
                     onClick={() => setActiveTab('dashboard')}
                 >
-                    🎮 Dashboard
+                    <span className="tab-icon">🎮</span>
+                    <span className="tab-label">Dashboard</span>
                 </button>
             </nav>
 
@@ -96,29 +99,42 @@ const MainLayout: React.FC = () => {
                     backdrop-filter: blur(10px);
                     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
                     padding: 0.5rem 1rem 0 1rem;
-                    gap: 0.5rem;
+                    gap: 0.25rem;
                     z-index: 100;
                 }
                 .tab-btn {
                     background: transparent;
                     border: none;
                     box-shadow: none;
-                    padding: 0.75rem 1.5rem;
-                    color: #888;
+                    padding: 0.75rem 1.25rem;
+                    color: #aaa;
                     font-weight: 600;
                     cursor: pointer;
                     border-radius: 8px 8px 0 0;
                     transition: all 0.2s;
                     border-bottom: 3px solid transparent;
+                    display: flex;
+                    align-items: center;
+                    gap: 0.4rem;
+                    white-space: nowrap;
+                    font-size: 0.95rem;
                 }
                 .tab-btn:hover {
                     color: #fff;
-                    background: rgba(255, 255, 255, 0.05);
+                    background: rgba(255, 255, 255, 0.06);
                 }
                 .tab-btn.active {
                     color: var(--primary);
-                    background: rgba(255, 255, 255, 0.1);
+                    background: rgba(var(--primary), 0.08);
+                    background: rgba(255, 64, 129, 0.08);
                     border-bottom: 3px solid var(--primary);
+                }
+                .tab-icon {
+                    font-size: 1.1rem;
+                    line-height: 1;
+                }
+                .tab-label {
+                    font-size: inherit;
                 }
                 .tab-content {
                     flex: 1;
@@ -130,6 +146,27 @@ const MainLayout: React.FC = () => {
                     justify-content: center;
                     align-items: center;
                     height: 100vh;
+                }
+                @media (max-width: 500px) {
+                    .tab-bar {
+                        justify-content: center;
+                        padding: 0.5rem 0.5rem 0;
+                    }
+                    .tab-btn {
+                        flex: 1;
+                        justify-content: center;
+                        padding: 0.6rem 0.5rem;
+                        flex-direction: column;
+                        gap: 0.15rem;
+                    }
+                    .tab-icon {
+                        font-size: 1.3rem;
+                    }
+                    .tab-label {
+                        font-size: 0.65rem;
+                        text-transform: uppercase;
+                        letter-spacing: 0.5px;
+                    }
                 }
             `}</style>
         </div>

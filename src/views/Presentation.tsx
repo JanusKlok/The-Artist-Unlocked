@@ -370,37 +370,92 @@ const Presentation: React.FC = () => {
         return (
             <div className="pre-load-screen">
                 <div className="pre-load-content">
+                    <div className="pre-load-glow" />
                     <h1 className="main-title">The Artist Unlocked</h1>
-                    <div className="loader"></div>
+                    <div className="pre-load-divider" />
                     <p className="status-text">Waiting for Quizmaster to host a session...</p>
+                    <div className="pre-load-dots">
+                        <span className="dot" />
+                        <span className="dot" />
+                        <span className="dot" />
+                    </div>
                 </div>
                 <style>{`
                     .pre-load-screen {
                         min-height: 100vh;
-                        background: #050505;
+                        background: radial-gradient(ellipse at 50% 40%, rgba(0, 229, 255, 0.06) 0%, #050505 70%);
                         display: flex;
                         align-items: center;
                         justify-content: center;
                         text-align: center;
                         color: #fff;
                         font-family: 'Outfit', sans-serif;
+                        overflow: hidden;
+                        position: relative;
+                    }
+                    .pre-load-glow {
+                        position: absolute;
+                        width: 400px;
+                        height: 400px;
+                        border-radius: 50%;
+                        background: radial-gradient(circle, rgba(0, 229, 255, 0.08) 0%, transparent 70%);
+                        animation: glow-pulse 4s ease-in-out infinite;
+                        pointer-events: none;
+                    }
+                    @keyframes glow-pulse {
+                        0%, 100% { transform: scale(1); opacity: 0.5; }
+                        50% { transform: scale(1.3); opacity: 1; }
+                    }
+                    .pre-load-content {
+                        position: relative;
+                        z-index: 1;
+                        display: flex;
+                        flex-direction: column;
+                        align-items: center;
                     }
                     .main-title {
-                        font-size: 3rem;
+                        font-size: 3.5rem;
                         color: #00E5FF;
-                        letter-spacing: 5px;
-                        margin-bottom: 2rem;
+                        letter-spacing: 8px;
+                        margin-bottom: 1.5rem;
                         text-transform: uppercase;
+                        text-shadow: 0 0 40px rgba(0, 229, 255, 0.3), 0 0 80px rgba(0, 229, 255, 0.1);
+                        animation: title-breathe 3s ease-in-out infinite;
                     }
-                    .loader {
-                        width: 50px; height: 50px;
-                        border: 3px solid rgba(255,255,255,0.1);
-                        border-top-color: #00E5FF;
+                    @keyframes title-breathe {
+                        0%, 100% { opacity: 1; text-shadow: 0 0 40px rgba(0, 229, 255, 0.3), 0 0 80px rgba(0, 229, 255, 0.1); }
+                        50% { opacity: 0.85; text-shadow: 0 0 60px rgba(0, 229, 255, 0.5), 0 0 120px rgba(0, 229, 255, 0.15); }
+                    }
+                    .pre-load-divider {
+                        width: 80px;
+                        height: 2px;
+                        background: linear-gradient(90deg, transparent, #00E5FF, transparent);
+                        margin-bottom: 1.5rem;
+                    }
+                    .status-text {
+                        color: rgba(255, 255, 255, 0.5);
+                        font-size: 1rem;
+                        letter-spacing: 2px;
+                        text-transform: uppercase;
+                        margin-bottom: 1.5rem;
+                    }
+                    .pre-load-dots {
+                        display: flex;
+                        gap: 0.5rem;
+                    }
+                    .dot {
+                        width: 8px;
+                        height: 8px;
                         border-radius: 50%;
-                        margin: 0 auto 1.5rem;
-                        animation: spin 1s linear infinite;
+                        background: #00E5FF;
+                        animation: dot-bounce 1.4s ease-in-out infinite;
                     }
-                    @keyframes spin { to { transform: rotate(360deg); } }
+                    .dot:nth-child(2) { animation-delay: 0.2s; }
+                    .dot:nth-child(3) { animation-delay: 0.4s; }
+                    @keyframes dot-bounce {
+                        0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
+                        40% { opacity: 1; transform: scale(1.2); }
+                    }
                 `}</style>
             </div>
         );
@@ -1586,7 +1641,7 @@ function getThematicParticles(theme: QuizArtist['visual_theme']) {
                         width: 1,
                         triangles: { enable: true, opacity: 0.05 }
                     },
-                    move: { ...baseConfig.particles.move, speed: 4, outModes: "bounce" },
+                    move: { ...baseConfig.particles.move, speed: 4, outModes: "bounce" as const },
                     size: { value: { min: 1, max: 3 } }
                 }
             };
@@ -1599,7 +1654,7 @@ function getThematicParticles(theme: QuizArtist['visual_theme']) {
                     shape: { type: "circle" },
                     number: { value: 20 },
                     size: { value: { min: 8, max: 30 } },
-                    move: { ...baseConfig.particles.move, speed: 1, direction: "top", outModes: "out" },
+                    move: { ...baseConfig.particles.move, speed: 1, direction: "top" as const, outModes: "out" as const },
                     opacity: { value: { min: 0.05, max: 0.2 }, animation: { enable: true, speed: 0.5, minimumValue: 0.05 } },
                     stroke: { width: 1, color: { value: color }, opacity: 0.2 }
                 }
@@ -1613,7 +1668,7 @@ function getThematicParticles(theme: QuizArtist['visual_theme']) {
                     number: { value: 30 },
                     color: { value: [color, secondary] },
                     links: { enable: true, color: color, distance: 200, opacity: 0.3, width: 1 },
-                    move: { ...baseConfig.particles.move, speed: 0.6, outModes: "out" },
+                    move: { ...baseConfig.particles.move, speed: 0.6, outModes: "out" as const },
                     opacity: { value: 0.5 },
                     size: { value: { min: 2, max: 4 } }
                 }
@@ -1627,7 +1682,7 @@ function getThematicParticles(theme: QuizArtist['visual_theme']) {
                     color: { value: [color, secondary, '#ffffff'] },
                     size: { value: { min: 80, max: 200 } },
                     opacity: { value: { min: 0.02, max: 0.1 }, animation: { enable: true, speed: 0.3, minimumValue: 0.02 } },
-                    move: { ...baseConfig.particles.move, speed: 0.2, direction: "random", outModes: "bounce" },
+                    move: { ...baseConfig.particles.move, speed: 0.2, direction: "none" as const, random: true, outModes: "bounce" as const },
                     shape: { type: "circle" }
                 }
             };
@@ -1643,8 +1698,8 @@ function getThematicParticles(theme: QuizArtist['visual_theme']) {
                     move: {
                         enable: true,
                         speed: { min: 1, max: 10 },
-                        direction: "top",
-                        outModes: "out",
+                        direction: "top" as const,
+                        outModes: "out" as const,
                         random: false,
                         straight: true
                     },
@@ -1665,7 +1720,7 @@ function getThematicParticles(theme: QuizArtist['visual_theme']) {
                         }
                     },
                     size: { value: { min: 12, max: 28 } },
-                    move: { ...baseConfig.particles.move, speed: 1.2, direction: "top-right", outModes: "out" },
+                    move: { ...baseConfig.particles.move, speed: 1.2, direction: "top-right" as const, outModes: "out" as const },
                     rotate: { value: { min: 0, max: 360 }, animation: { enable: true, speed: 3 } },
                     opacity: { value: { min: 0.2, max: 0.5 } }
                 }
@@ -1679,7 +1734,7 @@ function getThematicParticles(theme: QuizArtist['visual_theme']) {
                     color: { value: [color, '#ffffff', '#888888'] },
                     shape: { type: "square" },
                     size: { value: { min: 1, max: 2 } },
-                    move: { ...baseConfig.particles.move, speed: 15, direction: "none", random: true },
+                    move: { ...baseConfig.particles.move, speed: 15, direction: "none" as const, random: true },
                     opacity: { value: { min: 0.05, max: 0.4 }, animation: { enable: true, speed: 10 } }
                 }
             };
@@ -1695,8 +1750,8 @@ function getThematicParticles(theme: QuizArtist['visual_theme']) {
                     move: {
                         enable: true,
                         speed: { min: 1, max: 4 },
-                        direction: "top",
-                        outModes: "out",
+                        direction: "top" as const,
+                        outModes: "out" as const,
                         random: true,
                         straight: false
                     },
@@ -1715,8 +1770,8 @@ function getThematicParticles(theme: QuizArtist['visual_theme']) {
                     move: {
                         enable: true,
                         speed: 0.25,
-                        direction: "none",
-                        outModes: "out",
+                        direction: "none" as const,
+                        outModes: "out" as const,
                         random: true
                     },
                     opacity: { value: { min: 0.2, max: 1.0 }, animation: { enable: true, speed: 0.4, minimumValue: 0.2 } }
@@ -1734,8 +1789,8 @@ function getThematicParticles(theme: QuizArtist['visual_theme']) {
                     move: {
                         enable: true,
                         speed: { min: 10, max: 18 },
-                        direction: "bottom",
-                        outModes: "out",
+                        direction: "bottom" as const,
+                        outModes: "out" as const,
                         straight: true
                     },
                     opacity: { value: { min: 0.1, max: 0.45 } }
@@ -1753,8 +1808,8 @@ function getThematicParticles(theme: QuizArtist['visual_theme']) {
                     move: {
                         enable: true,
                         speed: 0.3,
-                        direction: "none",
-                        outModes: "bounce",
+                        direction: "none" as const,
+                        outModes: "bounce" as const,
                         random: true
                     },
                     opacity: { value: { min: 0.02, max: 0.1 }, animation: { enable: true, speed: 1, minimumValue: 0.02 } },
@@ -1773,8 +1828,8 @@ function getThematicParticles(theme: QuizArtist['visual_theme']) {
                     move: {
                         enable: true,
                         speed: { min: 5, max: 22 },
-                        direction: "none",
-                        outModes: "out",
+                        direction: "none" as const,
+                        outModes: "out" as const,
                         random: true,
                         straight: false
                     },

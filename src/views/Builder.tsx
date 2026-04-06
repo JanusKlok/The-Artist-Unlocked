@@ -92,7 +92,7 @@ const Builder: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
             getApi().getConfig().then(cfg => {
                 setConfig(cfg);
                 setSelectedProvider(prev => {
-                    const cfgMap = cfg as Record<string, string>;
+                    const cfgMap = cfg as unknown as Record<string, string>;
                     const configured = AI_PROVIDERS.filter(p => cfgMap[`${p}Key`] && cfgMap[`${p}Model`]) as AiProvider[];
                     return configured.includes(prev) ? prev : (configured[0] || (cfg.defaultAiProvider as AiProvider) || 'gemini');
                 });
@@ -156,7 +156,7 @@ const Builder: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
         const currentConfig = await getApi().getConfig();
         setConfig(currentConfig);
 
-        const cfgMap = currentConfig as Record<string, string>;
+        const cfgMap = currentConfig as unknown as Record<string, string>;
         const providerKey = cfgMap[`${selectedProvider}Key`];
         const providerModel = cfgMap[`${selectedProvider}Model`];
         if (!providerKey) return alert(`Missing API key for ${PROVIDER_LABELS[selectedProvider]} in Setup!`);
@@ -378,9 +378,18 @@ const Builder: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
                             const selectedModel = config ? config[`${selectedProvider}Model`] as string : '';
                             return (
                                 <div>
-                                    <h4 style={{ margin: '0.5rem 0 0.5rem 0', color: '#aaa', fontWeight: 400, fontSize: '0.95rem' }}>1. Select AI Provider</h4>
+                                    <div className="step-heading">
+                                        <span className="step-badge">1</span>
+                                        <span>Select AI Provider</span>
+                                    </div>
                                     {configuredProviders.length === 0 ? (
-                                        <p style={{ color: '#ff8c00', fontSize: '0.9rem', margin: 0 }}>⚠️ No AI providers configured. Go to the Config tab to add a provider.</p>
+                                        <div className="alert-banner alert-banner--warning">
+                                            <span>No AI providers configured.</span>
+                                            <span className="alert-link" onClick={() => {
+                                                const tabBtn = document.querySelector('.tab-btn:first-child') as HTMLElement;
+                                                if (tabBtn) tabBtn.click();
+                                            }}>Go to Config tab</span>
+                                        </div>
                                     ) : (
                                         <>
                                             <select
@@ -399,8 +408,11 @@ const Builder: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
                             );
                         })()}
 
-                        <h4 style={{ margin: 0, color: '#aaa', fontWeight: 400, fontSize: '0.95rem' }}>2. Choose Your Artists</h4>
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1rem' }}>
+                        <div className="step-heading">
+                            <span className="step-badge">2</span>
+                            <span>Choose Your Artists</span>
+                        </div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '0.75rem' }}>
                             {artists.map((a, i) => (
                                 <input
                                     key={i}
@@ -414,7 +426,10 @@ const Builder: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
                         </div>
 
                         <label>
-                            <h4 style={{ margin: '0.5rem 0 0.5rem 0', color: '#aaa', fontWeight: 400, fontSize: '0.95rem' }}>3. Select Difficulty</h4>
+                            <div className="step-heading">
+                                <span className="step-badge">3</span>
+                                <span>Select Difficulty</span>
+                            </div>
                             <select value={difficulty} onChange={e => setDifficulty(e.target.value)}>
                                 <option value="Casual">Casual Listener (Easy - Mainstream Hits)</option>
                                 <option value="Fan">Dedicated Fan (Medium - Album Tracks)</option>
@@ -427,12 +442,26 @@ const Builder: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
                                 ? AI_PROVIDERS.filter(p => config[`${p}Key`] && config[`${p}Model`])
                                 : [];
                             return (
-                                <button onClick={handleGenerate} disabled={configuredProviders.length === 0} style={{ marginTop: '1rem', padding: '1.2rem', fontSize: '1.2rem' }}>
+                                <button
+                                    className="btn-cta"
+                                    onClick={handleGenerate}
+                                    disabled={configuredProviders.length === 0}
+                                    style={{
+                                        marginTop: '1.5rem', padding: '1.2rem', fontSize: '1.2rem', width: '100%',
+                                        background: configuredProviders.length > 0
+                                            ? 'linear-gradient(135deg, #7c3aed, var(--primary), #ff79a1)'
+                                            : undefined,
+                                        boxShadow: configuredProviders.length > 0
+                                            ? '0 4px 20px rgba(124, 58, 237, 0.4), 0 4px 15px rgba(255, 64, 129, 0.3)'
+                                            : undefined
+                                    }}
+                                    title={configuredProviders.length === 0 ? 'Configure an AI provider in the Config tab first' : ''}
+                                >
                                     ✨ Generate Magic Lore Quiz ✨
                                 </button>
                             );
                         })()}
-                        <button onClick={() => navigate('/')} style={{ background: 'transparent', border: '1px solid rgba(255,255,255,0.2)', boxShadow: 'none' }}>
+                        <button onClick={() => navigate('/')} style={{ width: '100%' }}>
                             Back to Home
                         </button>
                     </div>
@@ -674,14 +703,14 @@ const Builder: React.FC<{ isActive?: boolean }> = ({ isActive = true }) => {
                             </div>
                         )}
 
-                        <div style={{ display: 'flex', gap: '1rem', marginTop: '2rem' }}>
-                            <button onClick={resetBuilder} style={{ flex: 1, background: '#555', boxShadow: 'none' }}>
+                        <div style={{ display: 'flex', gap: '1rem', marginTop: '2rem', flexWrap: 'wrap' }}>
+                            <button onClick={resetBuilder} style={{ flex: 1, minWidth: '140px' }}>
                                 Discard & Restart
                             </button>
-                            <button onClick={() => saveQuiz(false)} disabled={!isGenerationComplete && !editingQuizId} style={{ flex: 1, padding: '1.2rem', fontSize: '1.1rem', background: '#1db954' }}>
+                            <button className="btn-cta" onClick={() => saveQuiz(false)} disabled={!isGenerationComplete && !editingQuizId} style={{ flex: 1, minWidth: '140px', padding: '1.2rem', fontSize: '1.1rem', background: 'var(--success)', boxShadow: '0 4px 15px rgba(29,185,84,0.4)' }}>
                                 💾 Save
                             </button>
-                            <button onClick={() => saveQuiz(true)} disabled={!isGenerationComplete && !editingQuizId} style={{ flex: 1, padding: '1.2rem', fontSize: '1.1rem' }}>
+                            <button className="btn-cta" onClick={() => saveQuiz(true)} disabled={!isGenerationComplete && !editingQuizId} style={{ flex: 1, minWidth: '140px', padding: '1.2rem', fontSize: '1.1rem' }}>
                                 💾 Save & Dashboard
                             </button>
                         </div>

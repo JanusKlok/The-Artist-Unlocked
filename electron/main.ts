@@ -188,8 +188,8 @@ app.whenReady().then(() => {
         const url = request.url.replace('asset://', '');
         const filePath = path.join(quizzesDir, decodeURIComponent(url));
         // Prevent path traversal attacks
-        const resolved = path.resolve(filePath);
-        if (!resolved.startsWith(path.resolve(quizzesDir))) {
+        const resolved = path.resolve(filePath).toLowerCase();
+        if (!resolved.startsWith(path.resolve(quizzesDir).toLowerCase())) {
             return new Response('Forbidden', { status: 403 });
         }
         return net.fetch('file://' + filePath);
@@ -580,9 +580,11 @@ ipcMain.handle('remove-player-team', (_event, teamName: string) => {
         }
     }
     playerTeams.delete(lowerName);
+    const sidsToRemove: string[] = [];
     playerSessions.forEach((session, sid) => {
-        if (session.teamName === teamName) playerSessions.delete(sid);
+        if (session.teamName === teamName) sidsToRemove.push(sid);
     });
+    sidsToRemove.forEach(sid => playerSessions.delete(sid));
     playerAnswers.delete(teamName);
     broadcastAnswersToQuizmasters();
     return true;
